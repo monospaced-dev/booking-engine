@@ -1,0 +1,67 @@
+# ---- Stage 1: Composer dependencies ----
+FROM composer:2 AS vendor
+
+WORKDIR /app
+
+COPY composer.json composer.lock ./
+
+# Install PHP deps without running scripts yet (artisan isn't copied in until
+# the next COPY, so any composer script that calls `php artisan ...` would fail here)
+RUN composer install \
+    --no-dev \
+    --no-scripts \
+    --no-autoloader \
+    --prefer-dist \
+    --no-interaction
+
+COPY . .
+
+# Now generate the optimized autoloader and run discovery scripts with full app code present
+RUN composer dump-autoload --optimize --no-dev \
+    && composer run-script post-autoload-dump --no-dev
+
+# ---- Stage 2: Runtime image ----
+FROM php:8.3-fpm-bookworm AS runtime
+
+# System packages needed to build the PHP extensions below
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpq-dev \
+        libzip-dev \
+        unzip \
+        git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Laravel + Postgres baseline extensions
+RUN docker-php-ext-install \
+        pdo_pgsql \
+        pgsql \
+        bcmath \
+        opcache \
+        zip
+
+# Recommended production opcache settings
+RUN { \
+        echo 'opcache.memory_consumption=128'; \
+        echo 'opcache.interned_strings_buffer=8'; \
+        echo 'opcache.max_accelerated_files=10000'; \
+        echo 'opcache.validate_timestamps=0'; \
+        echo 'opcache.enable_cli=0'; \
+    } > /usr/local/etc/php/conf.d/opcache-recommended.ini
+
+WORKDIR /var/www/html
+
+COPY --from=vendor /app ./
+
+# php-fpm listens on TCP (not the default unix socket) so the sibling nginx
+# container in the same pod can reach it over the pod's loopback interface
+RUN sed -i \
+        -e 's|^listen = .*|listen = 9000|' \
+        /usr/local/etc/php-fpm.d/www.conf
+
+RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+
+USER www-data
+
+EXPOSE 9000
+
+CMD ["php-fpm"]

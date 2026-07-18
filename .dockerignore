@@ -1,0 +1,31 @@
+.git
+.gitignore
+.github
+
+# Dependencies (installed fresh inside the container)
+/vendor
+/node_modules
+
+# Env / secrets — never bake these into an image
+.env
+.env.*
+!.env.example
+
+# Local dev artifacts
+/storage/*.key
+/storage/logs/*
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+/storage/debugbar
+/.phpunit.cache
+/tests
+/.idea
+/.vscode
+/.fleet
+/.zed
+
+# Misc
+*.log
+docker-compose*.yml
+README.md
