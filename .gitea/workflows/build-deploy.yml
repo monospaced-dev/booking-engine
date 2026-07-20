@@ -1,0 +1,42 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout booking-engine
+        uses: actions/checkout@v4
+
+      - name: Log in to Gitea registry
+        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login gitea.robotoh.io -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+
+      - name: Set short SHA
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push fpm image
+        run: |
+          docker build -f docker/Dockerfile.fpm -t gitea.robotoh.io/roboto/booking-engine-fpm:${{ steps.vars.outputs.sha_short }} .
+          docker push gitea.robotoh.io/roboto/booking-engine-fpm:${{ steps.vars.outputs.sha_short }}
+
+      - name: Build and push nginx image
+        run: |
+          docker build -f docker/Dockerfile.nginx -t gitea.robotoh.io/roboto/booking-engine-nginx:${{ steps.vars.outputs.sha_short }} .
+          docker push gitea.robotoh.io/roboto/booking-engine-nginx:${{ steps.vars.outputs.sha_short }}
+
+      - name: Bump image tags in homelab-gitops
+        run: |
+          git clone "https://oauth2:${{ secrets.GITOPS_TOKEN }}@gitea.robotoh.io/roboto/homelab-gitops.git"
+          cd homelab-gitops
+
+          sed -i "s|booking-engine-fpm:.*|booking-engine-fpm:${{ steps.vars.outputs.sha_short }}|g" booking-engine/app-deployment.yaml
+          sed -i "s|booking-engine-nginx:.*|booking-engine-nginx:${{ steps.vars.outputs.sha_short }}|g" booking-engine/app-deployment.yaml
+
+          git config user.email "actions@robotoh.io"
+          git config user.name "Gitea Actions"
+          git commit -am "Deploy booking-engine @ ${{ steps.vars.outputs.sha_short }}"
+          git push
