@@ -20,12 +20,12 @@ jobs:
 
       - name: Build and push fpm image
         run: |
-          docker build -f docker/Dockerfile.fpm -t gitea.robotoh.io/roboto/booking-engine-fpm:${{ steps.vars.outputs.sha_short }} .
+          docker build --pull -f docker/Dockerfile.fpm -t gitea.robotoh.io/roboto/booking-engine-fpm:${{ steps.vars.outputs.sha_short }} .
           docker push gitea.robotoh.io/roboto/booking-engine-fpm:${{ steps.vars.outputs.sha_short }}
 
       - name: Build and push nginx image
         run: |
-          docker build -f docker/Dockerfile.nginx -t gitea.robotoh.io/roboto/booking-engine-nginx:${{ steps.vars.outputs.sha_short }} .
+          docker build --pull -f docker/Dockerfile.nginx -t gitea.robotoh.io/roboto/booking-engine-nginx:${{ steps.vars.outputs.sha_short }} .
           docker push gitea.robotoh.io/roboto/booking-engine-nginx:${{ steps.vars.outputs.sha_short }}
 
       - name: Bump image tags in homelab-gitops
