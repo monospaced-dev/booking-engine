@@ -21,9 +21,9 @@ services:
             DB_DATABASE: booking_engine
             DB_USERNAME: booking_engine
             DB_PASSWORD: local_dev_only
-            APP_ENV: local
+            APP_ENV: production
             APP_DEBUG: "true"
-            APP_KEY: "" # fill in after first run, see instructions below
+            APP_KEY: "base64:QUfOWURULNU4WMNyqw5IKcbrTXjmaBYKYkpq/9cwWgc="
         depends_on:
             - postgres
 

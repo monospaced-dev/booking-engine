@@ -16,12 +16,14 @@ RUN composer install \
 
 COPY . .
 
+RUN mkdir -p bootstrap/cache storage/framework/cache storage/framework/sessions storage/framework/views storage/logs
+
 # Now generate the optimized autoloader and run discovery scripts with full app code present
 RUN composer dump-autoload --optimize --no-dev \
     && composer run-script post-autoload-dump --no-dev
 
 # ---- Stage 2: Runtime image ----
-FROM php:8.3-fpm-bookworm AS runtime
+FROM php:8.4-fpm-bookworm AS runtime
 
 # System packages needed to build the PHP extensions below
 RUN apt-get update && apt-get install -y --no-install-recommends \
