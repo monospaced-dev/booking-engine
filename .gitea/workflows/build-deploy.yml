@@ -33,7 +33,7 @@ jobs:
           git clone "https://oauth2:${{ secrets.GITOPS_TOKEN }}@gitea.robotoh.io/roboto/homelab-gitops.git"
           cd homelab-gitops
 
-          sed -i "s|booking-engine-fpm:.*|booking-engine-fpm:${{ steps.vars.outputs.sha_short }}|g" booking-engine/app-deployment.yaml booking-engine/booking-engine-migrate-job.yaml
+          sed -i "s|booking-engine-fpm:.*|booking-engine-fpm:${{ steps.vars.outputs.sha_short }}|g" booking-engine/app-deployment.yaml booking-engine/migrate-job.yaml
           sed -i "s|booking-engine-nginx:.*|booking-engine-nginx:${{ steps.vars.outputs.sha_short }}|g" booking-engine/app-deployment.yaml
 
           git config user.email "actions@robotoh.io"
