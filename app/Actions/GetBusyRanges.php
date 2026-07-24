@@ -10,6 +10,14 @@ use Illuminate\Support\Collection;
 
 class GetBusyRanges
 {
+    /**
+     * Get busy times in given time period for resource excluding bookings and blackouts.
+     *
+     * @param Resource $resource
+     * @param Carbon $from
+     * @param Carbon $to
+     * @return array
+     */
     public function handle(Resource $resource, Carbon $from, Carbon $to): array
     {
         $bookings = $resource->bookings()

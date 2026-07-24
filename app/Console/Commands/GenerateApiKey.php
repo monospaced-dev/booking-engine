@@ -24,7 +24,7 @@ class GenerateApiKey extends Command
         }
 
         $rawKey = bin2hex(random_bytes(32)); // 64 character cryptographically secure random string
-        ApiKey::create(['name' => $this->option('name'), 'key' => hash('sha256', $rawKey)]);
+        ApiKey::create(['name' => $this->option('name'), 'key' => hash('sha256', $rawKey), 'is_active' => true]);
 
         $this->info('Your API key (save this, it won\'t be shown again):');
         $this->info($rawKey);

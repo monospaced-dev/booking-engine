@@ -13,12 +13,20 @@ class BookingController extends Controller
 {
     public function index(Request $request, Resource $resource)
     {
-        $from = $request->query('from');
-        $to = $request->query('to');
+        $validated = $request->validate([
+            'from' => 'required_with:to|nullable|date',
+            'to' => 'required_with:from|nullable|date|after:from',
+        ]);
 
-        if ($from && $to) {
+        if (!empty($validated['from']) && !empty($validated['to'])) {
             $bookings = $resource->bookings()
-                ->whereRaw('during && ?::tstzrange', [sprintf('[%s,%s)', $from, $to)])
+                ->whereRaw('during && ?::tstzrange', [
+                    sprintf(
+                        '[%s,%s)',
+                        Carbon::parse($validated['from'])->toIso8601String(),
+                        Carbon::parse($validated['to'])->toIso8601String(),
+                    ),
+                ])
                 ->get();
         } else {
             \Log::debug("BookingController: Fetching all bookings for resource {$resource->id}");
@@ -37,13 +45,29 @@ class BookingController extends Controller
             200
         );
     }
+
     public function store(Request $request, Resource $resource, CreateBooking $createBooking)
     {
         $validated = $request->validate([
             'starts_at' => 'required|date',
             'ends_at' => 'required|date|after:starts_at',
             'metadata' => 'sometimes|array',
+            'metadata.appointment_id' => 'sometimes|integer',
         ]);
+
+        $idempotencyKey = $request->header('Idempotency-Key');
+
+        if ($idempotencyKey) {
+            $existing = $resource->bookings()->where('idempotency_key', $idempotencyKey)->first();
+
+            if ($existing) {
+                $parsed = $existing->parseDuring($existing->during);
+                $existing->starts_at = $parsed['starts_at'];
+                $existing->ends_at = $parsed['ends_at'];
+
+                return response()->json($existing, 200);
+            }
+        }
 
         try {
             $booking = $createBooking->handle(
@@ -53,7 +77,21 @@ class BookingController extends Controller
                 startsAt: Carbon::parse($validated['starts_at']),
                 endsAt: Carbon::parse($validated['ends_at']),
                 metadata: $validated['metadata'] ?? [],
+                idempotencyKey: $idempotencyKey,
             );
+        } catch (\Illuminate\Database\QueryException $e) {
+            // SQLSTATE 23505 = unique_violation on (resource_id, idempotency_key) —
+            // a concurrent request with the same key won the race.
+            if ($e->getCode() === '23505' && $idempotencyKey) {
+                $existing = $resource->bookings()->where('idempotency_key', $idempotencyKey)->firstOrFail();
+
+                $parsed = $existing->parseDuring($existing->during);
+                $existing->starts_at = $parsed['starts_at'];
+                $existing->ends_at = $parsed['ends_at'];
+
+                return response()->json($existing, 200);
+            }
+            throw $e;
         } catch (BookingConflictException $e) {
             return response()->json(['error' => $e->getMessage()], 409);
         }

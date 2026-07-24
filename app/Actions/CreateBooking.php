@@ -12,7 +12,15 @@ class CreateBooking {
     /**
      * @throws BookingConflictException
      */
-    public function handle(int $resourceId, string $externalType, int $externalId, Carbon $startsAt, Carbon $endsAt, array $metadata = []): Booking
+    public function handle(
+        int $resourceId,
+        string $externalType,
+        int $externalId,
+        Carbon $startsAt,
+        Carbon $endsAt,
+        array $metadata = [],
+        ?string $idempotencyKey = null,
+    ): Booking
     {
         $during = sprintf(
             '[%s,%s)',
@@ -21,18 +29,25 @@ class CreateBooking {
         );
 
         try {
-            $row = DB::selectOne(
-                'INSERT INTO bookings (resource_id, external_type, external_id, during, metadata, created_at, updated_at)
-             VALUES (?, ?, ?, ?::tstzrange, ?, now(), now())
-             RETURNING id, resource_id, external_type, external_id, during, metadata, created_at, updated_at',
-                [
-                    $resourceId,
-                    $externalType,
-                    $externalId,
-                    $during,
-                    json_encode($metadata),
-                ]
-            );
+            // Wrapped in DB::transaction() so a failed INSERT rolls back to a
+            // savepoint rather than aborting any enclosing transaction (e.g.
+            // RefreshDatabase's outer test transaction, or a future caller
+            // that wraps this call alongside other statements).
+            $row = DB::transaction(function () use ($resourceId, $externalType, $externalId, $during, $metadata, $idempotencyKey) {
+                return DB::selectOne(
+                    'INSERT INTO bookings (resource_id, external_type, external_id, during, metadata, idempotency_key, created_at, updated_at)
+                 VALUES (?, ?, ?, ?::tstzrange, ?, ?, now(), now())
+                 RETURNING id, resource_id, external_type, external_id, during, metadata, idempotency_key, created_at, updated_at',
+                    [
+                        $resourceId,
+                        $externalType,
+                        $externalId,
+                        $during,
+                        json_encode($metadata),
+                        $idempotencyKey,
+                    ]
+                );
+            });
         } catch (QueryException $e) {
             // SQLSTATE 23P01 = exclusion_violation
             if ($e->getCode() === '23P01') {
@@ -42,12 +57,13 @@ class CreateBooking {
             throw $e;
         }
 
-        $booking =  new Booking([
+        $booking = new Booking([
             'id' => $row->id,
             'resource_id' => $row->resource_id,
             'external_type' => $row->external_type,
             'external_id' => $row->external_id,
             'metadata' => json_decode($row->metadata, true),
+            'idempotency_key' => $row->idempotency_key,
         ]);
 
         $parsed = $booking->parseDuring($row->during);
@@ -58,4 +74,3 @@ class CreateBooking {
         return $booking;
     }
 }
-
