@@ -17,7 +17,7 @@ class BusyRangesController extends Controller
         ]);
 
         $from = Carbon::parse($validated['from'], $resource->timezone);
-        $to = Carbon::parse($validated['cto'], $resource->timezone);
+        $to = Carbon::parse($validated['to'], $resource->timezone);
 
         $windows = $getBusyRanges->handle($resource, $from, $to);
 
