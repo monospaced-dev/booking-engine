@@ -11,6 +11,20 @@ Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
+// Unauthenticated on purpose: k8s probes and external uptime monitors (Uptime
+// Kuma) can't carry an API key, so this stays outside the auth.apikey group.
+// Actually checks DB connectivity rather than returning a static 200, so a
+// broken DB connection surfaces as unhealthy instead of a false-positive pass.
+Route::get('/health', function () {
+    try {
+        DB::connection()->getPdo();
+    } catch (\Throwable $e) {
+        return response()->json(['status' => 'error', 'database' => 'unreachable'], 503);
+    }
+
+    return response()->json(['status' => 'ok']);
+});
+
 Route::middleware('auth.apikey')->group(function () {
     Route::post('/resources/{resource}/bookings', [BookingController::class, 'store']);
     Route::get('/resources/{resource}/bookings', [BookingController::class, 'index']);
