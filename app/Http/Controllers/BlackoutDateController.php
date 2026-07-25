@@ -4,25 +4,43 @@ namespace App\Http\Controllers;
 
 use App\Models\BlackoutDate;
 use App\Models\Resource;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 
 class BlackoutDateController extends Controller
 {
-    /*
+
+    /**
+     * List blackout dates.
+     *
+     * @param Request $request
+     * @param Resource $resource
+     *
+     * @return JsonResponse
+     */
+    public function index(Request $request, Resource $resource): JsonResponse
+    {
+        $blackoutDates = $resource->blackoutDates()->orderBy('date')->get();
+
+        return response()->json($blackoutDates);
+    }
+
+    /**
      * Blackout dates controller for the API.
      *
      * @param Request $request
      * @param Resource $resource
      *
-     * @return void
+     * @return JsonResponse
      */
-    public function store(Request $request, Resource $resource)
+    public function store(Request $request, Resource $resource): JsonResponse
     {
         $validated = $request->validate([
             'date' => 'required|date',
             'start_time' => 'nullable|date_format:H:i|required_with:end_time',
             'end_time' => 'nullable|date_format:H:i|required_with:start_time|after:start_time',
-            'reason' => 'nullable|string',
+            'note' => 'nullable|string',
         ]);
 
         $blackoutDate = $resource->blackoutDates()->create($validated);
@@ -30,15 +48,15 @@ class BlackoutDateController extends Controller
         return response()->json($blackoutDate, 201);
     }
 
-    /*
+    /**
      * Delete blackout date.
      *
      * @param Resource $resource
-     * @param int $id
+     * @param BlackoutDate $blackoutDate
      *
-     * @return void
+     * @return JsonResponse|Response
      */
-    public function destroy(Resource $resource, BlackoutDate $blackoutDate)
+    public function destroy(Resource $resource, BlackoutDate $blackoutDate): JsonResponse|Response
     {
         if ($blackoutDate->resource_id !== $resource->id) {
             return response()->json(['message' => 'Forbidden'], 403);

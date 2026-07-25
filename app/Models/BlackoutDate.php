@@ -15,10 +15,10 @@ class BlackoutDate extends Model
         'resource_id',
         'start_time',
         'end_time',
-        'reason'
+        'note'
     ];
 
-    public function resources(): BelongsTo
+    public function resource(): BelongsTo
     {
         return $this->belongsTo(Resource::class);
     }

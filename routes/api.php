@@ -36,5 +36,6 @@ Route::middleware('auth.apikey')->group(function () {
 
 
     Route::post('/resources/{resource}/blackout-dates', [BlackoutDateController::class, 'store']);
+    Route::get('/resources/{resource}/blackout-dates', [BlackoutDateController::class, 'index']);
     Route::delete('/resources/{resource}/blackout-dates/{blackoutDate}', [BlackoutDateController::class, 'destroy']);
 });

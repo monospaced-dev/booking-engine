@@ -14,7 +14,7 @@ class BlackoutDateFactory extends Factory
             'date' => now()->addDays(3)->toDateString(),
             'start_time' => null,
             'end_time' => null,
-            'reason' => 'Holiday',
+            'note' => 'Holiday',
         ];
     }
 }
