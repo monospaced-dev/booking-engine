@@ -30,9 +30,7 @@ class CreateBooking {
 
         try {
             // Wrapped in DB::transaction() so a failed INSERT rolls back to a
-            // savepoint rather than aborting any enclosing transaction (e.g.
-            // RefreshDatabase's outer test transaction, or a future caller
-            // that wraps this call alongside other statements).
+            // savepoint rather than aborting any enclosing transaction
             $row = DB::transaction(function () use ($resourceId, $externalType, $externalId, $during, $metadata, $idempotencyKey) {
                 return DB::selectOne(
                     'INSERT INTO bookings (resource_id, external_type, external_id, during, metadata, idempotency_key, created_at, updated_at)

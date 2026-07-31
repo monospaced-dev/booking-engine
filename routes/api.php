@@ -25,6 +25,8 @@ Route::get('/health', function () {
     return response()->json(['status' => 'ok']);
 });
 
+Route::get('/ping', fn () => response()->noContent());
+
 Route::middleware('auth.apikey')->group(function () {
     Route::post('/resources/{resource}/bookings', [BookingController::class, 'store']);
     Route::get('/resources/{resource}/bookings', [BookingController::class, 'index']);

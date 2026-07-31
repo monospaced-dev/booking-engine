@@ -43,6 +43,21 @@ it('replays the existing booking on a duplicate idempotency key instead of creat
     $this->assertDatabaseCount('bookings', 1);
 });
 
+it('persists the submitted idempotency_key on the created booking row', function () {
+    $key = (string) Str::uuid();
+
+    $response = $this->withHeaders($this->headers)->postJson("/api/resources/{$this->resource->id}/bookings", [
+        'starts_at' => '2026-08-03T14:00:00Z',
+        'ends_at' => '2026-08-03T15:00:00Z',
+    ], ['Idempotency-Key' => $key]);
+
+    $response->assertStatus(201);
+    $this->assertDatabaseHas('bookings', [
+        'resource_id' => $this->resource->id,
+        'idempotency_key' => $key,
+    ]);
+});
+
 it('allows the same idempotency key to be reused across different resources', function () {
     $otherResource = Resource::factory()->create();
     $key = (string) Str::uuid();
