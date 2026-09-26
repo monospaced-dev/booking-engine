@@ -1,18 +1,13 @@
-# Reuses the same vendor/app-code build stage as Dockerfile.fpm so the
-# public/ directory (and anything it references) is always in sync with
-# what php-fpm is running — no separate "npm run build" needed here since
-# booking-engine ships no frontend assets.
-FROM composer:2 AS vendor
+# nginx only serves static files from public/ and hands *.php to php-fpm
+# over the pod's loopback, so it needs the public/ directory and nothing
+# else (booking-engine ships no frontend build). No composer stage needed.
+#
+# nginx-unprivileged runs as UID 101, listens on 8080, and keeps its pid
+# and temp files in /tmp, so it passes the restricted Pod Security profile.
+# The stock nginx image starts as root and fails runAsNonRoot.
+FROM nginxinc/nginx-unprivileged:1.30-alpine
 
-WORKDIR /app
-COPY composer.json composer.lock ./
-RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-interaction
-COPY . .
-RUN composer dump-autoload --optimize --no-dev
-
-FROM nginx:1.27-alpine
-
-COPY --from=vendor /app/public /var/www/html/public
+COPY public /var/www/html/public
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 8080

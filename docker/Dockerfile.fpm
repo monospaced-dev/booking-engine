@@ -25,21 +25,25 @@ RUN composer dump-autoload --optimize --no-dev \
 # ---- Stage 2: Runtime image ----
 FROM php:8.4-fpm-bookworm AS runtime
 
-# System packages needed to build the PHP extensions below
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        libpq-dev \
-        libzip-dev \
-        unzip \
-        git \
-    && rm -rf /var/lib/apt/lists/*
-
-# Laravel + Postgres baseline extensions
-RUN docker-php-ext-install \
-        pdo_pgsql \
-        pgsql \
-        bcmath \
-        opcache \
-        zip
+# Build the PHP extensions, then remove the compilers and -dev headers they
+# needed. Only the shared libraries the extensions link against (libpq5,
+# libzip4, ...) are kept, found by ldd rather than listed by hand. This is the
+# pattern the official php image uses; it keeps build tooling and its CVEs out
+# of the runtime image. git/unzip are gone too: composer runs only in the
+# vendor stage.
+RUN set -eux; \
+    savedAptMark="$(apt-mark showmanual)"; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends libpq-dev libzip-dev; \
+    docker-php-ext-install -j"$(nproc)" pdo_pgsql pgsql bcmath opcache zip; \
+    apt-mark auto '.*' > /dev/null; \
+    [ -z "$savedAptMark" ] || apt-mark manual $savedAptMark; \
+    find /usr/local -type f -executable -exec ldd '{}' ';' \
+        | awk '/=>/ { so = $(NF-1); if (index(so, "/usr/local/") == 1) { next }; gsub("^/(usr/)?", "", so); printf "*%s\n", so }' \
+        | sort -u | xargs -r dpkg-query --search | cut -d: -f1 | sort -u | xargs -r apt-mark manual; \
+    apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
+    rm -rf /var/lib/apt/lists/*; \
+    php -m | grep -E '^(pdo_pgsql|pgsql|bcmath|Zend OPcache|zip)$'
 
 # Recommended production opcache settings
 RUN { \
@@ -60,9 +64,12 @@ RUN sed -i \
         -e 's|^listen = .*|listen = 9000|' \
         /usr/local/etc/php-fpm.d/www.conf
 
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+RUN chown -R 33:33 /var/www/html/storage /var/www/html/bootstrap/cache
 
-USER www-data
+# Numeric UID, not "www-data": with runAsNonRoot the kubelet can only prove a
+# numeric user is non-root; a name makes the pod fail to start under the
+# restricted Pod Security profile. 33 is www-data on Debian.
+USER 33:33
 
 EXPOSE 9000
 
