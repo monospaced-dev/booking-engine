@@ -23,7 +23,7 @@ RUN composer dump-autoload --optimize --no-dev \
     && composer run-script post-autoload-dump --no-dev
 
 # ---- Stage 2: Runtime image ----
-FROM php:8.4-fpm-bookworm AS runtime
+FROM php:8.4-fpm-trixie AS runtime
 
 # Build the PHP extensions, then remove the compilers and -dev headers they
 # needed. Only the shared libraries the extensions link against (libpq5,
