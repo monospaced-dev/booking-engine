@@ -7,6 +7,13 @@
 # The stock nginx image starts as root and fails runAsNonRoot.
 FROM nginxinc/nginx-unprivileged:1.30-alpine
 
+# Pull in Alpine security fixes the base image hasn't been rebuilt with yet
+# (e.g. libexpat CVE-2026-93990, fixed in 2.8.5-r0 while the base shipped
+# 2.8.4-r0). apk needs root; drop straight back to the image's UID 101.
+USER root
+RUN apk upgrade --no-cache
+USER 101
+
 COPY public /var/www/html/public
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 

@@ -18,7 +18,10 @@ jobs:
       packages: write   # push to GHCR
       id-token: write   # OIDC token for keyless cosign signing
     strategy:
-      fail-fast: true   # one image failing its scan stops the other too
+      # Let both images finish so every scan result is visible. Nothing
+      # deploys until a digest is committed to homelab-platform, so a lone
+      # pushed image is harmless.
+      fail-fast: false
       matrix:
         component: [fpm, nginx]
     env:
