@@ -87,6 +87,14 @@ jobs:
           file: docker/Dockerfile.${{ matrix.component }}
           platforms: linux/arm64
           push: true
+          # Push a plain single-platform manifest, not an image index. With
+          # buildx's default provenance attestation the tag is an index
+          # (arm64 image + attestation), and Kyverno 1.19's image verifier
+          # resolves indexes to linux/amd64 only, so arm64-only indexes fail
+          # with "no child with platform linux/amd64 in index". One manifest
+          # means one digest: the one pushed, signed, scanned and deployed.
+          provenance: false
+          sbom: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.component }}
