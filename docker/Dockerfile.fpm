@@ -28,7 +28,8 @@ FROM php:8.4-fpm-trixie AS runtime
 # Build the PHP extensions, then remove the compilers and -dev headers they
 # needed. Only the shared libraries the extensions link against (libpq5,
 # libzip4, ...) are kept, found by ldd rather than listed by hand. This is the
-# pattern the official php image uses; it keeps build tooling and its CVEs out
+# pattern the official php image uses (copied from its trixie Dockerfile,
+# including the awk filter below); it keeps build tooling and its CVEs out
 # of the runtime image. git/unzip are gone too: composer runs only in the
 # vendor stage.
 RUN set -eux; \
@@ -40,7 +41,9 @@ RUN set -eux; \
     [ -z "$savedAptMark" ] || apt-mark manual $savedAptMark; \
     find /usr/local -type f -executable -exec ldd '{}' ';' \
         | awk '/=>/ { so = $(NF-1); if (index(so, "/usr/local/") == 1) { next }; gsub("^/(usr/)?", "", so); printf "*%s\n", so }' \
-        | sort -u | xargs -r dpkg-query --search | cut -d: -f1 | sort -u | xargs -r apt-mark manual; \
+        | sort -u | xargs -r dpkg-query --search \
+        | awk 'sub(":$", "", $1) { print $1 }' \
+        | sort -u | xargs -r apt-mark manual; \
     apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
     rm -rf /var/lib/apt/lists/*; \
     php -m | grep -E '^(pdo_pgsql|pgsql|bcmath|Zend OPcache|zip)$'
