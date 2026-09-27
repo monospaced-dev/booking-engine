@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Monthly rebuild (1st of the month, 09:17 UTC) even with no code change:
+  # picks up patched base images and Alpine/Debian package fixes, re-scans
+  # with a fresh Trivy database, and signs the result. homelab-platform's
+  # image-digests workflow opens a PR with the new digests a few hours later.
+  schedule:
+    - cron: "17 9 1 * *"
 
 # Least privilege by default; the job below asks for exactly what it needs.
 permissions:
@@ -53,6 +59,9 @@ jobs:
           platforms: linux/arm64
           pull: true
           load: true
+          # Scheduled runs ignore the layer cache, otherwise the cached
+          # `apk upgrade` / apt layers would never pick up new fixes.
+          no-cache: ${{ github.event_name == 'schedule' }}
           tags: scan:${{ matrix.component }}
           cache-from: type=gha,scope=${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}
