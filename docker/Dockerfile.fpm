@@ -35,6 +35,7 @@ FROM php:8.4-fpm-trixie AS runtime
 RUN set -eux; \
     savedAptMark="$(apt-mark showmanual)"; \
     apt-get update; \
+    apt-get upgrade -y --no-install-recommends; \
     apt-get install -y --no-install-recommends libpq-dev libzip-dev; \
     docker-php-ext-install -j"$(nproc)" pdo_pgsql pgsql bcmath opcache zip; \
     apt-mark auto '.*' > /dev/null; \
@@ -44,6 +45,7 @@ RUN set -eux; \
         | sort -u | xargs -r dpkg-query --search \
         | awk 'sub(":$", "", $1) { print $1 }' \
         | sort -u | xargs -r apt-mark manual; \
+    apt-mark auto autoconf dpkg-dev file g++ gcc libc6-dev make pkg-config re2c > /dev/null; \
     apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
     rm -rf /var/lib/apt/lists/*; \
     php -m | grep -E '^(pdo_pgsql|pgsql|bcmath|Zend OPcache|zip)$'
