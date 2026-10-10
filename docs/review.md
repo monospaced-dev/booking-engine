@@ -28,6 +28,7 @@ A Laravel API over Postgres that answers one question: *when is resource X busy?
 Severity is relative to this service's one job: returning a *wrong or missing* busy range means a double booking downstream, so those rank highest.
 
 ### B1. CI never runs the tests, and the Gitea workflow deploys on every push to main
+**Status:** Fixed 2026-10-10 on `fix/phase-1-safety-net`, commit `8fd11d1`.
 - `.gitea/workflows/build-deploy.yml:1-35` builds, pushes and bumps the gitops tag on `push: main`, with no test step and no gate.
 - `.github/workflows/build-sign.yml` (jobs at line 19 onward) builds, scans and signs. It has no test job either, and nothing runs `pest`.
 - This is the most likely explanation for "a typo shipped after a green test run". I can't tell which run was "green"; if it was a CI run, it was a *build* going green. The suite also needs a Postgres service container, which neither workflow has.
@@ -105,6 +106,7 @@ None are wrong in isolation. Together they are what a consumer's HTTP mocks drif
 - **Untested controllers:** `ResourceController` (store and update) has zero tests. The 23505 branch and the savepoint comment at `CreateBooking.php:32-33` can't be exercised under `RefreshDatabase`.
 - **Passes, but fails in prod:** B2, B3 and B4 all pass today because every datetime in the suite is UTC with a `Z`, and `IntervalTest` uses same-timezone Carbons.
 - **Local setup:** `phpunit.xml` has its DB settings commented out and relies on `.env.testing` plus a manually started Postgres. Running without one gives 37 errors that look like test failures.
+  **Status:** Setup fixed 2026-10-10 on `fix/phase-1-safety-net`, commit `a4838ab`.
 - **Scaffold tests:** `ExampleTest` (hits `/`, the Laravel welcome page) and `tests/Unit/ExampleTest.php` are noise.
 
 ### B13. Smaller items
