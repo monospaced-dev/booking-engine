@@ -13,7 +13,7 @@ it('stops once with setup instructions when the test database is unavailable', f
     $output = $process->getOutput().$process->getErrorOutput();
 
     expect(substr_count($output, 'Test database unavailable:'))->toBe(1);
-    expect($process->getExitCode())->toBe(1);
+    expect($process->getExitCode())->toBe(2);
     expect($output)->toContain('Postgres 16', 'booking_engine_test', 'DB_HOST', 'DB_PORT');
     expect($output)->not->toContain('SQLSTATE', 'QueryException');
 });
