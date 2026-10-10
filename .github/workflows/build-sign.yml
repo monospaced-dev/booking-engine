@@ -17,7 +17,46 @@ permissions:
   contents: read
 
 jobs:
+  test:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: booking_engine_test
+          POSTGRES_USER: root
+          POSTGRES_PASSWORD: testing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U root -d booking_engine_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: booking_engine_test
+      DB_USERNAME: root
+      DB_PASSWORD: testing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@bf6b4fbd49ca58e4608c9c89fba0b8d90bd2a39f # 2.35.5
+        with:
+          php-version: '8.4'
+          extensions: pdo_pgsql
+          tools: composer:v2
+          coverage: none
+      - name: Install dependencies (including Pest)
+        run: composer install --prefer-dist --no-interaction --no-progress
+      - name: Test
+        run: vendor/bin/pest
+
   image:
+    needs: test
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
