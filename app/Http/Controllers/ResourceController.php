@@ -34,7 +34,7 @@ class ResourceController extends Controller
             'external_id' => $resource->external_id,
             'timezone' => $resource->timezone,
             'created' => $resource->wasRecentlyCreated
-        ]);
+        ], $resource->wasRecentlyCreated ? 201 : 200);
     }
 
     /**
