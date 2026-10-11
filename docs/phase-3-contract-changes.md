@@ -107,3 +107,46 @@ and the required If-Match request header, with negative mutation checks.
 
 Full suite: **186 tests passed, 849 assertions** on PostgreSQL **17.11**, using
 `--fail-on-risky`. Pint and `git diff --check` pass.
+
+
+## Phase 6: resource, metadata and range hardening
+
+Implemented on `fix/phase-6-hardening` (ranked #12: B8, B9, B11 and range
+constraints). Contract source: [openapi.yaml](openapi.yaml).
+
+| Endpoint | Before | After |
+|---|---|---|
+| All resource, booking and blackoutDate path parameters | Non-numeric or out-of-range IDs could cause database errors / 500 | Must match `[0-9]{1,18}`; anything else returns 404 `route_not_found`. Valid but missing IDs return 404 `not_found`. |
+| POST `/api/resources/{resource}/bookings`, metadata | Only appointment_id retained; unknown keys silently dropped | Flat opaque object, at most 20 keys matching `^[A-Za-z0-9_]{1,40}$`; values are strings of at most 500 characters or strict integers. All valid keys and values retained, including empty strings and whitespace. appointment_id must be an integer. Violations return 422 `validation_failed`. |
+| POST bookings, empty metadata | Empty array / omitted metadata accepted and returned as `[]` | Omitted, `{}` and `[]` are equivalent. Non-empty lists are rejected. All booking responses (POST/replay, list, GET one, PATCH) serialize empty metadata as `{}`, including legacy rows. No stored-row rewrite. |
+| POST bookings, idempotency replay | Metadata array comparison depended on key order | Keys sorted on both sides before strict comparison; reordered keys replay with 200. Integer `7` and string `"7"` differ and return 422 `idempotency_mismatch`. |
+| POST `/api/resources`, existing identity with different timezone | 200 with the stored timezone, silently ignoring the supplied timezone | 409 `timezone_mismatch`, with message/code; resource unchanged. Same timezone still returns 200. Unique-violation races re-select the winner and apply identical rules. |
+| POST bookings and PATCH `/api/resources/{resource}/bookings/{booking}` | No duration sanity bound | At most 366 elapsed days (366 × 86400 seconds); longer ranges return 422 `validation_failed` on ends_at without a write. This is a sanity limit, not a consumer business rule. |
+| `/api/user` | Unused Sanctum scaffold endpoint | Removed; returns 404 `route_not_found`. |
+
+Metadata is opaque client reference data: stored and returned unchanged, never
+interpreted, indexed or logged by the engine. Do not use it for personal
+information. JSON object key order is not significant. No nested objects, lists,
+booleans, floats or nulls are accepted as values.
+
+PUT resource behavior is unchanged. Changing a timezone shifts existing
+blackouts; that hazard is removed by the later blackout-range work.
+
+Apply the additive migration before deploying the application. The CHECK rejects
+empty ranges, unbounded ranges, and explicit infinite timestamp bounds. It
+validates existing rows and fails loudly if any violate it, with no data rewrite.
+The ALTER TABLE takes a table lock for validation; the previous application may
+continue to use its existing finite, nonempty INSERT/UPDATE statements. Duration
+is enforced only on new POST/PATCH requests; finite legacy ranges longer than
+366 days remain valid. Down removes only the new CHECK.
+
+Each behavior change was reproduced by failing tests before implementation.
+Two-process resource creation tests synchronize with pg_blocking_pids and observe
+real 23505 violations, proving matching lookup and timezone mismatch recovery.
+Database tests cover empty, unbounded and explicit infinite ranges, validation of
+bad legacy rows, and previous-writer compatibility. The cleanup commit removes
+the unused InvalidAvailabilityException and /api/user route; both scaffold
+ExampleTest files were already absent from main.
+
+Validation: **231 tests passed, 998 assertions** on PostgreSQL **17.11**, with
+`--fail-on-risky`. OpenAPI real-response validation, Pint and diff checks pass.

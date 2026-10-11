@@ -55,8 +55,9 @@ paths:
       operationId: findOrCreateResource
       summary: Find or create an external resource
       description: |
-        Existing resources retain their stored timezone even if a different
-        timezone is supplied. Use PUT to change it. The created flag is retained.
+        Existing resources with the same timezone return 200. A different timezone
+        returns 409 timezone_mismatch and leaves the resource unchanged, including
+        after a concurrent creation race. The created flag is retained.
       requestBody:
         required: true
         content:
@@ -80,6 +81,16 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ResourceResult'}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '409':
+          description: Existing resource timezone differs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, code]
+                properties:
+                  message: {type: string}
+                  code: {type: string, enum: [timezone_mismatch]}
         '422': {$ref: '#/components/responses/ValidationFailed'}
         default: {$ref: '#/components/responses/Error'}
   /resources/{resource}:
@@ -88,6 +99,7 @@ paths:
     put:
       operationId: updateResource
       summary: Change resource timezone
+      description: Changing a timezone shifts existing blackouts; the later blackout-range work removes this hazard.
       requestBody:
         required: true
         content:
@@ -143,8 +155,9 @@ paths:
         Rejects overlap with other bookings, but does not enforce blackouts.
         An existing Idempotency-Key for this resource returns the stored booking
         with 200 only when UTC-normalised starts_at, ends_at and retained metadata match.
+        Bookings may not exceed 366 elapsed days (422 validation_failed); this is a sanity limit, not a business rule.
         Datetimes compare at the existing stored second precision. Omitted metadata
-        compares as an empty array. A mismatch returns 422 idempotency_mismatch.
+        and empty {} or [] compare equally. Metadata key order is ignored; values compare strictly. A mismatch returns 422 idempotency_mismatch.
         Keys are scoped to the resource. PATCH leaves the stored key untouched;
         retrying the original POST after a reschedule returns 422 idempotency_mismatch.
         Concurrent retries recover both exclusion and unique constraint races by
@@ -168,13 +181,12 @@ paths:
                 starts_at: {$ref: '#/components/schemas/DatetimeInput'}
                 ends_at: {$ref: '#/components/schemas/DatetimeInput'}
                 metadata:
-                  description: Only appointment_id is retained; other keys are currently discarded.
+                  description: Empty [] is also accepted as omitted metadata.
                   anyOf:
+                    - {$ref: '#/components/schemas/Metadata'}
                     - type: array
+                      maxItems: 0
                       items: {}
-                    - type: object
-                      properties:
-                        appointment_id: {type: integer}
       responses:
         '201':
           description: Full stored booking
@@ -233,7 +245,8 @@ paths:
       - name: booking
         in: path
         required: true
-        schema: {type: integer, minimum: 1}
+        description: Path IDs must match [0-9]{1,18}; invalid IDs return 404 route_not_found.
+        schema: {type: string, pattern: '^[0-9]{1,18}$'}
     get:
       operationId: getBooking
       summary: Get a full booking belonging to this resource
@@ -253,6 +266,7 @@ paths:
       summary: Atomically reschedule a booking
       description: |
         Changes only starts_at and ends_at, at stored UTC-second precision.
+        Bookings may not exceed 366 elapsed days (422 validation_failed); this is a sanity limit, not a business rule.
         Requires one strong quoted lock_version via If-Match. Weak tags, wildcards,
         lists and malformed tags fail with 412. Missing If-Match returns 428.
         The version comparison and increment occur in the same UPDATE as the times.
@@ -425,7 +439,7 @@ paths:
       - name: blackoutDate
         in: path
         required: true
-        schema: {type: integer, minimum: 1}
+        schema: {type: string, pattern: '^[0-9]{1,18}$'}
     delete:
       operationId: deleteBlackoutDate
       summary: Delete a blackout belonging to this resource
@@ -450,7 +464,7 @@ components:
       name: resource
       in: path
       required: true
-      schema: {type: integer, minimum: 1}
+      schema: {type: string, pattern: '^[0-9]{1,18}$'}
   responses:
     NoContent:
       description: Success with an empty response body
@@ -473,7 +487,7 @@ components:
             required: [message, code]
             properties:
               message: {type: string}
-              code: {type: string, enum: [not_found]}
+              code: {type: string, enum: [not_found, route_not_found]}
     ValidationFailed:
       description: Request validation failed
       content:
@@ -544,6 +558,22 @@ components:
         external_id: {type: integer}
         timezone: {type: string}
         created: {type: boolean}
+    Metadata:
+      type: object
+      maxProperties: 20
+      description: >
+        Opaque client reference data, stored and returned unchanged, never interpreted,
+        indexed or logged by the engine. Do not use for personal information.
+        Keys must match ^[A-Za-z0-9_]{1,40}$. Values are strings of at most 500
+        characters or integers; no nested objects, lists, booleans, floats or nulls.
+        Empty metadata is always serialized as {}. Key order has no meaning;
+        idempotency compares values strictly (integer 7 differs from string "7").
+      properties:
+        appointment_id: {type: integer}
+      additionalProperties:
+        anyOf:
+          - {type: string, maxLength: 500}
+          - {type: integer}
     Booking:
       type: object
       additionalProperties: false
@@ -554,14 +584,7 @@ components:
         external_type: {type: string}
         external_id: {type: integer}
         metadata:
-          description: Existing B8 behavior retained; empty metadata is [], populated metadata is an object.
-          anyOf:
-            - type: array
-              maxItems: 0
-              items: {}
-            - type: object
-              properties:
-                appointment_id: {type: integer}
+          $ref: '#/components/schemas/Metadata'
         lock_version: {type: integer, minimum: 1}
         idempotency_key: {type: string, nullable: true}
         starts_at: {$ref: '#/components/schemas/UtcTimestamp'}

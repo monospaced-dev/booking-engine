@@ -4,12 +4,7 @@ use App\Http\Controllers\BlackoutDateController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\BusyRangesController;
 use App\Http\Controllers\ResourceController;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');
 
 // Unauthenticated on purpose: k8s probes and external uptime monitors (Uptime
 // Kuma) can't carry an API key, so this stays outside the auth.apikey group.
@@ -26,6 +21,10 @@ Route::get('/health', function () {
 });
 
 Route::get('/ping', fn () => response()->noContent());
+
+Route::pattern('resource', '[0-9]{1,18}');
+Route::pattern('booking', '[0-9]{1,18}');
+Route::pattern('blackoutDate', '[0-9]{1,18}');
 
 Route::middleware('auth.apikey')->group(function () {
     Route::post('/resources/{resource}/bookings', [BookingController::class, 'store']);

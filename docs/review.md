@@ -79,12 +79,14 @@ Severity is relative to this service's one job: returning a *wrong or missing* b
 - **Fix:** validate length and charset (for example `^[A-Za-z0-9_-]{1,128}$`) and return 422.
 
 ### B8. Unknown `metadata` keys are silently dropped — **verified**
+**Status:** Fixed in Phase 6 on `fix/phase-6-hardening`: retain every valid flat metadata key, enforce 20 keys / ASCII key length 40 / string length 500 or strict integers, reject invalid values with 422 `validation_failed`, preserve original strings, and serialize all empty metadata as `{}` without rewriting existing rows. Replay sorts keys and compares values strictly. The findings below describe the original behavior.
 - `BookingController.php:54-55` declares `metadata` as an array with one validated child. Laravel's `validated()` returns only declared keys, so `metadata: {foo: "bar", appointment_id: 5}` is stored as `{"appointment_id":5}`.
 - An empty or absent `metadata` is stored and returned as `[]` (a JSON array), not `{}`. The response type of the field flips between array and object depending on content.
 - If the consumer ever sends anything beyond `appointment_id`, it is discarded without an error. Decide the policy: allow free-form with a size cap, or reject unknown keys with 422.
 - **Dependency from B5:** the idempotency replay check compares metadata with `$existing->metadata !== $metadata` (`BookingController::replay()`), which is order-sensitive in PHP. That is safe only while `appointment_id` is the sole retained key. If this item allows more metadata keys, make the comparison order-insensitive first (for example, recursively `ksort` both sides before comparing), or a legitimate retry with reordered keys will get a false 422 `idempotency_mismatch`. Add a regression test with the same keys in a different order.
 
 ### B9. Out-of-range IDs return 500 — **verified**
+**Status:** Fixed in Phase 6 on `fix/phase-6-hardening`: all resource, booking and blackoutDate path parameters match `[0-9]{1,18}`; invalid IDs return 404 `route_not_found` before database binding. Valid but absent IDs still return `not_found`.
 - `GET /api/resources/99999999999999999999/busy` gives `SQLSTATE[22003] … out of range for type bigint`, status 500, not 404. This applies to every route with `{resource}`, `{booking}` or `{blackoutDate}`.
 - `bootstrap/app.php:25-27` only maps `NotFoundHttpException`.
 - Low likelihood (the consumer sends real IDs) but trivial to fix with a route pattern (`[0-9]{1,18}`).
@@ -106,18 +108,19 @@ Severity is relative to this service's one job: returning a *wrong or missing* b
 None are wrong in isolation. Together they are what a consumer's HTTP mocks drift from.
 
 ### B11. `POST /resources` silently ignores a different timezone — **verified**
+**Status:** Fixed in Phase 6 on `fix/phase-6-hardening`: POST returns 409 `timezone_mismatch` for different timezones and retains the row unchanged. Matching timezones still return 200. Two-process tests observe actual 23505 races and prove both outcomes after firstOrCreate re-selects the winner. PUT behavior is unchanged; its blackout-shifting hazard awaits blackout-range work.
 - `ResourceController.php:21-29` uses `firstOrCreate` with `timezone` only in the "create" attributes. Posting an existing resource with a *different* timezone returns 200 with the *old* value and `created:false`.
 - `PUT /resources/{id}` (`:43-57`) does change it. That silently shifts every existing blackout's UTC meaning, because blackouts are stored as local wall-clock time (**unverified**, from the code), while bookings are absolute instants and don't move.
 - Also: `firstOrCreate` can race on `unique(external_type, external_id)` and surface as a 500 (**unverified**, standard check-then-insert race).
 
 ### B12. Test gaps for the failure modes you described
-**Status:** Phase 3 controller coverage added 2026-10-10 on `fix/phase-3-contract`: GET bookings executes the real Postgres overlap predicate, verifies resource isolation, half-open boundaries, offset bounds, full unclipped ranges, empty lists and invalid windows. ResourceController covers create/find statuses, timezone update, validation and missing resources. Spec tests validate all service operations. Full suite: 126 tests passed, 518 assertions on Postgres 17.11. Phase 4 adds real concurrency coverage for B5-B7; Phase 5 on `feat/phase-5-reschedule` centralizes the overlap predicate in `Booking::scopeOverlapping()` and half-open second-precision literals in `BookingRange::literal()`, used by create, busy and list. The refactor passed the full suite and was committed independently as `a2506c3`. B8-B9, B11 and B13 are unchanged. The findings below describe the original gaps.
+**Status:** Phase 3 controller coverage added 2026-10-10 on `fix/phase-3-contract`: GET bookings executes the real Postgres overlap predicate, verifies resource isolation, half-open boundaries, offset bounds, full unclipped ranges, empty lists and invalid windows. ResourceController covers create/find statuses, timezone update, validation and missing resources. Spec tests validate all service operations. Full suite: 126 tests passed, 518 assertions on Postgres 17.11. Phase 4 adds real concurrency coverage for B5-B7; Phase 5 on `feat/phase-5-reschedule` centralizes the overlap predicate in `Booking::scopeOverlapping()` and half-open second-precision literals in `BookingRange::literal()`, used by create, busy and list. The refactor passed the full suite and was committed independently as `a2506c3`. Phase 6 fixes B8-B9 and B11; B13 remains outside scope. The findings below describe the original gaps.
 - **Raw SQL with no test execution:** `BookingController.php:23` (`whereRaw('during && ?::tstzrange', …)` in `index`). There is no test for `GET …/bookings` at all. I ran it manually and it works today, but a future edit to the binding wouldn't fail any test. `CreateBooking.php:35-47` and `GetBusyRanges.php:24` *are* executed on real Postgres by existing tests.
 - **Untested controllers:** `ResourceController` (store and update) has zero tests. The 23505 branch and the savepoint comment at `CreateBooking.php:32-33` can't be exercised under `RefreshDatabase`.
 - **Passes, but fails in prod:** B2, B3 and B4 all pass today because every datetime in the suite is UTC with a `Z`, and `IntervalTest` uses same-timezone Carbons.
 - **Local setup:** `phpunit.xml` has its DB settings commented out and relies on `.env.testing` plus a manually started Postgres. Running without one gives 37 errors that look like test failures.
   **Status:** Setup fixed 2026-10-10 on `fix/phase-1-safety-net`, commit `a4838ab`.
-- **Scaffold tests:** `ExampleTest` (hits `/`, the Laravel welcome page) and `tests/Unit/ExampleTest.php` are noise.
+- **Scaffold tests:** **Status:** Already removed on main before Phase 6; no ExampleTest files remain. Original finding: `ExampleTest` (hits `/`, the Laravel welcome page) and `tests/Unit/ExampleTest.php` are noise.
 
 ### B13. Smaller items
 - **Per-request write on every call** — `AuthenticateApiKey.php:35-36` runs `UPDATE api_keys` on every request. That causes row-lock contention on a single hot row under concurrent load. Only update when `last_used_at` is older than a minute.
@@ -227,6 +230,8 @@ Legend: **Fits oracle?** = stays a pure busy-time store/merge, with no availabil
 ---
 
 ## 4. Ranked improvements and features
+
+**Status (#12):** Implemented in Phase 6 on `fix/phase-6-hardening`: B8, B9, B11, a validated finite/nonempty `bookings.during` CHECK, and the 366-day POST/PATCH sanity limit. Migration validates legacy rows without rewriting them and remains compatible with the previous finite-range writer. Unused exception and `/api/user` removed; ExampleTest files were already absent from main. B13, blackouts, endpoints, soft-cancel, rate limiting and metrics remain outside scope.
 
 **Status (#5 and overlap-helper half of #6):** Implemented in Phase 5 on `feat/phase-5-reschedule`. See F2 and B12 above. B8-B13 findings, holds, blackouts and soft-cancel remain outside Phase 5 scope; existing controller coverage from Phase 3 is retained.
 

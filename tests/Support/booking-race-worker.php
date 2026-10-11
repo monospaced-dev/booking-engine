@@ -41,6 +41,10 @@ try {
             throw new RuntimeException('Winning PATCH must return version 2 and its ETag.');
         }
         fwrite(STDOUT, $response->getStatusCode()."\n");
+    } elseif (($input['mode'] ?? '') === 'resource') {
+        $statement = $pdo->prepare('INSERT INTO resources (external_type, external_id, timezone, created_at, updated_at) VALUES (?, ?, ?, now(), now()) RETURNING id');
+        $statement->execute($input['bindings']);
+        fwrite(STDOUT, $statement->fetchColumn()."\n");
     } else {
         $statement = $pdo->prepare('INSERT INTO bookings
             (resource_id, external_type, external_id, during, metadata, idempotency_key, created_at, updated_at)

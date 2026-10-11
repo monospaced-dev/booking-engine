@@ -141,7 +141,7 @@ it('rejects a replay whose stored payload differs', function (array $changes) {
     'removed metadata' => [['metadata' => []]],
 ]);
 
-it('compares UTC instants and the currently retained metadata', function () {
+it('compares UTC instants and the opaque metadata', function () {
     $first = $this->withHeaders($this->headers)->postJson("/api/resources/{$this->resource->id}/bookings", [
         'starts_at' => '2026-08-03T14:00:00Z', 'ends_at' => '2026-08-03T15:00:00Z',
         'metadata' => ['appointment_id' => 7, 'ignored' => 'first'],
@@ -149,7 +149,7 @@ it('compares UTC instants and the currently retained metadata', function () {
     $first->assertCreated();
     $this->withHeaders($this->headers)->postJson("/api/resources/{$this->resource->id}/bookings", [
         'starts_at' => '2026-08-03T09:00:00-05:00', 'ends_at' => '2026-08-03T17:00:00+02:00',
-        'metadata' => ['ignored' => 'second', 'appointment_id' => 7],
+        'metadata' => ['ignored' => 'first', 'appointment_id' => 7],
     ], ['Idempotency-Key' => 'offset-key'])->assertOk()->assertExactJson($first->json())
         ->assertOpenApi('/resources/{resource}/bookings', 'post');
 });
