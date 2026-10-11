@@ -10,7 +10,7 @@ use Tests\Support\RaceConnection;
 
 uses(DatabaseMigrations::class);
 
-it('recovers resource creation races and checks the winning timezone', function (string $timezone, int $status) {
+it('recovers resource creation races by identity alone', function () {
     $headers = apiKeyHeader();
     $identity = ['external_type' => 'race', 'external_id' => 123];
     $originalResolver = Connection::getResolver('pgsql');
@@ -32,13 +32,13 @@ it('recovers resource creation races and checks the winning timezone', function 
         $started = true;
         fwrite($pipes[0], json_encode([
             'mode' => 'resource', 'connection' => $connection->getConfig(), 'request_pid' => $requestPid,
-            'bindings' => ['race', 123, 'America/Chicago'],
+            'bindings' => ['race', 123],
         ], JSON_THROW_ON_ERROR)."\n");
         fclose($pipes[0]);
         expect(trim(fgets($pipes[1])))->toMatch('/^[0-9]+$/');
     });
     try {
-        $response = $this->withHeaders($headers)->postJson('/api/resources', $identity + ['timezone' => $timezone]);
+        $response = $this->withHeaders($headers)->postJson('/api/resources', $identity);
         expect($started)->toBeTrue();
         expect(trim(stream_get_contents($pipes[1])))->toBe('committed after observing blocked retry');
         $error = stream_get_contents($pipes[2]);
@@ -48,14 +48,8 @@ it('recovers resource creation races and checks the winning timezone', function 
         $worker = null;
         expect($exit)->toBe(0, $error);
         expect($connection->observedSqlstate)->toBe('23505');
-        $response->assertStatus($status)->assertOpenApi('/resources', 'post');
-        if ($status === 409) {
-            $response->assertJsonPath('code', 'timezone_mismatch');
-        } else {
-            $response->assertJsonPath('created', false)->assertJsonPath('timezone', 'America/Chicago');
-        }
+        $response->assertOk()->assertOpenApi('/resources', 'post')->assertJsonPath('created', false)->assertJsonMissingPath('timezone');
         expect(Resource::where($identity)->count())->toBe(1);
-        expect(Resource::where($identity)->first()->timezone)->toBe('America/Chicago');
     } finally {
         if (is_resource($worker)) {
             proc_terminate($worker);
@@ -71,4 +65,4 @@ it('recovers resource creation races and checks the winning timezone', function 
         Resource::where($identity)->delete();
         ApiKey::where('key', ApiKey::hashKey($headers['X-API-Key']))->delete();
     }
-})->with([['America/Chicago', 200], ['Asia/Tokyo', 409]]);
+});

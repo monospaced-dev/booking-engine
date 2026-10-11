@@ -5,16 +5,14 @@ namespace Database\Factories;
 use App\Models\Resource;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
-class BlackoutDateFactory extends Factory
+class BlackoutFactory extends Factory
 {
     public function definition(): array
     {
         return [
             'resource_id' => Resource::factory(),
-            'date' => now()->addDays(3)->toDateString(),
-            'start_time' => null,
-            'end_time' => null,
-            'note' => 'Holiday',
+            'during' => '[2026-07-21T17:00:00Z,2026-07-21T18:00:00Z)',
+            'note' => null,
         ];
     }
 }

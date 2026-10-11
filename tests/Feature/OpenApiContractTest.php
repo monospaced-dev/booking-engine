@@ -1,7 +1,7 @@
 <?php
 
 use App\Actions\CreateBooking;
-use App\Models\BlackoutDate;
+use App\Models\Blackout;
 use App\Models\Resource;
 use Carbon\Carbon;
 use GuzzleHttp\Psr7\Request;
@@ -36,40 +36,39 @@ it('validates real booking create replay list conflict and delete responses', fu
         ->assertOpenApi('/resources/{resource}/bookings/{booking}', 'delete');
 })->with(['empty metadata' => [[]], 'populated metadata' => [['appointment_id' => 7]]]);
 
-it('validates resource create find and update responses', function () {
+it('validates resource create and find responses', function () {
     $this->withHeaders(apiKeyHeader());
-    $payload = ['external_type' => 'inspector', 'external_id' => 7, 'timezone' => 'UTC'];
+    $payload = ['external_type' => 'inspector', 'external_id' => 7];
     $created = $this->postJson('/api/resources', $payload)->assertCreated()->assertOpenApi('/resources', 'post');
     $this->postJson('/api/resources', $payload)->assertOk()->assertOpenApi('/resources', 'post');
-    $this->putJson('/api/resources/'.$created->json('id'), ['timezone' => 'America/Chicago'])
-        ->assertOk()->assertOpenApi('/resources/{resource}', 'put');
+
 });
 
 it('validates blackout create list and delete responses', function (array $payload) {
     $resource = Resource::factory()->create();
     $this->withHeaders(apiKeyHeader());
-    $path = "/api/resources/{$resource->id}/blackout-dates";
-    $operation = '/resources/{resource}/blackout-dates';
+    $path = "/api/resources/{$resource->id}/blackouts";
+    $operation = '/resources/{resource}/blackouts';
     $this->getJson($path)->assertOk()->assertExactJson([])->assertOpenApi($operation, 'get');
     $created = $this->postJson($path, $payload)->assertCreated()->assertOpenApi($operation, 'post');
     $this->getJson($path)->assertOk()->assertOpenApi($operation, 'get');
     $this->deleteJson($path.'/'.$created->json('id'))->assertNoContent()
-        ->assertOpenApi('/resources/{resource}/blackout-dates/{blackoutDate}', 'delete');
+        ->assertOpenApi('/resources/{resource}/blackouts/{blackout}', 'delete');
     $this->deleteJson($path.'/'.$created->json('id'))->assertNotFound()
-        ->assertOpenApi('/resources/{resource}/blackout-dates/{blackoutDate}', 'delete');
+        ->assertOpenApi('/resources/{resource}/blackouts/{blackout}', 'delete');
 })->with([
-    'full day' => [['date' => '2026-07-21']],
-    'partial day' => [['date' => '2026-07-21', 'start_time' => '12:00', 'end_time' => '13:00', 'note' => 'Lunch']],
+    'full day' => [['starts_at' => '2026-07-21T00:00:00Z', 'ends_at' => '2026-07-22T00:00:00Z']],
+    'partial day' => [['starts_at' => '2026-07-21T12:00:00Z', 'ends_at' => '2026-07-21T13:00:00Z', 'note' => 'Lunch']],
 ]);
 
 it('validates populated and empty busy responses', function () {
-    $resource = Resource::factory()->create(['timezone' => 'UTC']);
+    $resource = Resource::factory()->create();
     $this->withHeaders(apiKeyHeader());
     $uri = "/api/resources/{$resource->id}/busy?".http_build_query([
         'from' => '2026-07-21T00:00:00Z', 'to' => '2026-07-22T00:00:00Z',
     ]);
     $this->getJson($uri)->assertOk()->assertExactJson([])->assertOpenApi('/resources/{resource}/busy', 'get');
-    BlackoutDate::factory()->create(['resource_id' => $resource->id, 'date' => '2026-07-21', 'start_time' => null, 'end_time' => null]);
+    Blackout::factory()->create(['resource_id' => $resource->id, 'during' => '[2026-07-21T00:00:00Z,2026-07-22T00:00:00Z)']);
     $this->getJson($uri)->assertOk()->assertJsonCount(1)->assertOpenApi('/resources/{resource}/busy', 'get');
 });
 
@@ -87,41 +86,41 @@ it('validates 401 on every protected operation', function (string $method, strin
     $resource = Resource::factory()->create();
     $booking = (new CreateBooking)->handle($resource->id, $resource->external_type, $resource->external_id,
         Carbon::parse('2026-07-21T09:00:00Z'), Carbon::parse('2026-07-21T10:00:00Z'));
-    $blackout = BlackoutDate::factory()->create(['resource_id' => $resource->id]);
-    $uri = '/api'.strtr($operation, ['{resource}' => $resource->id, '{booking}' => $booking->id, '{blackoutDate}' => $blackout->id]);
+    $blackout = Blackout::factory()->create(['resource_id' => $resource->id]);
+    $uri = '/api'.strtr($operation, ['{resource}' => $resource->id, '{booking}' => $booking->id, '{blackout}' => $blackout->id]);
     $this->json($method, $uri)->assertUnauthorized()->assertOpenApi($operation, $method);
 })->with([
-    ['post', '/resources'], ['put', '/resources/{resource}'],
+    ['post', '/resources'],
     ['get', '/resources/{resource}/bookings'], ['post', '/resources/{resource}/bookings'],
     ['get', '/resources/{resource}/bookings/{booking}'], ['patch', '/resources/{resource}/bookings/{booking}'],
     ['delete', '/resources/{resource}/bookings/{booking}'], ['get', '/resources/{resource}/busy'],
-    ['get', '/resources/{resource}/blackout-dates'], ['post', '/resources/{resource}/blackout-dates'],
-    ['delete', '/resources/{resource}/blackout-dates/{blackoutDate}'],
+    ['get', '/resources/{resource}/blackouts'], ['post', '/resources/{resource}/blackouts'],
+    ['delete', '/resources/{resource}/blackouts/{blackout}'],
 ]);
 
 it('validates missing-resource 404 on every resource-bound operation', function (string $method, string $operation) {
     $this->withHeaders(apiKeyHeader());
-    $uri = '/api'.strtr($operation, ['{resource}' => 999999, '{booking}' => 999999, '{blackoutDate}' => 999999]);
+    $uri = '/api'.strtr($operation, ['{resource}' => 999999, '{booking}' => 999999, '{blackout}' => 999999]);
     $this->json($method, $uri)->assertNotFound()->assertOpenApi($operation, $method);
 })->with([
-    ['put', '/resources/{resource}'], ['get', '/resources/{resource}/bookings'],
+    ['get', '/resources/{resource}/bookings'],
     ['post', '/resources/{resource}/bookings'], ['get', '/resources/{resource}/bookings/{booking}'], ['patch', '/resources/{resource}/bookings/{booking}'], ['delete', '/resources/{resource}/bookings/{booking}'],
-    ['get', '/resources/{resource}/busy'], ['get', '/resources/{resource}/blackout-dates'],
-    ['post', '/resources/{resource}/blackout-dates'], ['delete', '/resources/{resource}/blackout-dates/{blackoutDate}'],
+    ['get', '/resources/{resource}/busy'], ['get', '/resources/{resource}/blackouts'],
+    ['post', '/resources/{resource}/blackouts'], ['delete', '/resources/{resource}/blackouts/{blackout}'],
 ]);
 
 it('validates 422 on every operation accepting validated inputs', function (string $method, string $operation) {
     $resource = Resource::factory()->create();
     $this->withHeaders(apiKeyHeader());
     $uri = '/api'.strtr($operation, ['{resource}' => $resource->id]);
-    if ($method === 'get' && str_ends_with($operation, '/bookings')) {
+    if ($method === 'get' && (str_ends_with($operation, '/bookings') || str_ends_with($operation, '/blackouts'))) {
         $uri .= '?from=invalid';
     }
     $this->json($method, $uri)->assertUnprocessable()->assertOpenApi($operation, $method);
 })->with([
-    ['post', '/resources'], ['put', '/resources/{resource}'], ['get', '/resources/{resource}/bookings'],
+    ['post', '/resources'], ['get', '/resources/{resource}/bookings'],
     ['post', '/resources/{resource}/bookings'], ['get', '/resources/{resource}/busy'],
-    ['post', '/resources/{resource}/blackout-dates'],
+    ['post', '/resources/{resource}/blackouts'], ['get', '/resources/{resource}/blackouts'],
 ]);
 
 it('rejects regressions in captured real responses', function (string $mutation) {
@@ -196,3 +195,13 @@ it('validates the PATCH If-Match request contract', function (?string $tag) {
         expect(fn () => $validator->validate($request))->toThrow(ValidationFailed::class);
     }
 })->with(['"1"', null, '1', 'W/"1"', '*']);
+
+it('validates integer path IDs with their documented bounds', function (string $id, bool $valid) {
+    $validator = (new ValidatorBuilder)->fromYamlFile(base_path('docs/openapi.yaml'))->getRequestValidator();
+    $request = new Request('DELETE', "/api/resources/{$id}/blackouts/{$id}", ['X-API-Key' => 'spec-key']);
+    if ($valid) {
+        expect($validator->validate($request)->method())->toBe('delete');
+    } else {
+        expect(fn () => $validator->validate($request))->toThrow(ValidationFailed::class);
+    }
+})->with([['1', true], ['999999999999999999', true], ['0', false], ['1000000000000000000', false], ['-1', false], ['abc', false]]);
