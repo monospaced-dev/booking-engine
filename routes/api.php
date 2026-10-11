@@ -26,7 +26,7 @@ Route::pattern('resource', '[1-9][0-9]{0,17}');
 Route::pattern('blackout', '[1-9][0-9]{0,17}');
 Route::pattern('booking', '[1-9][0-9]{0,17}');
 
-Route::middleware('auth.apikey')->group(function () {
+Route::middleware(['auth.apikey', 'throttle:api'])->group(function () {
     Route::post('/resources/{resource}/bookings', [BookingController::class, 'store']);
     Route::get('/resources/{resource}/bookings', [BookingController::class, 'index']);
     Route::get('/resources/{resource}/bookings/{booking}', [BookingController::class, 'show']);

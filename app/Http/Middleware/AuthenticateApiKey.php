@@ -32,6 +32,8 @@ class AuthenticateApiKey
             return response()->json(['message' => 'Unauthorized', 'code' => 'unauthorized'], 401);
         }
 
+        $request->attributes->set('api_key_id', $storedKey->id);
+
         $storedKey->last_used_at = now();
         $storedKey->save();
 
