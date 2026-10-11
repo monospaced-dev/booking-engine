@@ -124,3 +124,39 @@ it('accepts boundary idempotency keys including zero', function (string $key) {
         ->assertOk()->assertExactJson($first->json());
     $this->assertDatabaseCount('bookings', 1);
 })->with(['zero' => '0', 'one character' => '_', '128 characters' => str_repeat('Az0_-', 25).'ABC']);
+
+it('rejects a replay whose stored payload differs', function (array $changes) {
+    $payload = ['starts_at' => '2026-08-03T14:00:00Z', 'ends_at' => '2026-08-03T15:00:00Z', 'metadata' => ['appointment_id' => 7]];
+    $first = $this->withHeaders($this->headers)->postJson("/api/resources/{$this->resource->id}/bookings", $payload, ['Idempotency-Key' => 'payload-key']);
+    $first->assertCreated();
+    $this->withHeaders($this->headers)->postJson("/api/resources/{$this->resource->id}/bookings", array_replace($payload, $changes), ['Idempotency-Key' => 'payload-key'])
+        ->assertStatus(422)->assertJsonPath('code', 'idempotency_mismatch')
+        ->assertOpenApi('/resources/{resource}/bookings', 'post');
+    $stored = $this->withHeaders($this->headers)->getJson("/api/resources/{$this->resource->id}/bookings");
+    $stored->assertExactJson([$first->json()]);
+})->with([
+    'start' => [['starts_at' => '2026-08-03T14:10:00Z']],
+    'end' => [['ends_at' => '2026-08-03T15:10:00Z']],
+    'metadata' => [['metadata' => ['appointment_id' => 8]]],
+    'removed metadata' => [['metadata' => []]],
+]);
+
+it('compares UTC instants and the currently retained metadata', function () {
+    $first = $this->withHeaders($this->headers)->postJson("/api/resources/{$this->resource->id}/bookings", [
+        'starts_at' => '2026-08-03T14:00:00Z', 'ends_at' => '2026-08-03T15:00:00Z',
+        'metadata' => ['appointment_id' => 7, 'ignored' => 'first'],
+    ], ['Idempotency-Key' => 'offset-key']);
+    $first->assertCreated();
+    $this->withHeaders($this->headers)->postJson("/api/resources/{$this->resource->id}/bookings", [
+        'starts_at' => '2026-08-03T09:00:00-05:00', 'ends_at' => '2026-08-03T17:00:00+02:00',
+        'metadata' => ['ignored' => 'second', 'appointment_id' => 7],
+    ], ['Idempotency-Key' => 'offset-key'])->assertOk()->assertExactJson($first->json())
+        ->assertOpenApi('/resources/{resource}/bookings', 'post');
+});
+
+it('compares absent and empty metadata as the existing empty stored payload', function () {
+    $payload = ['starts_at' => '2026-08-03T14:00:00Z', 'ends_at' => '2026-08-03T15:00:00Z'];
+    $first = $this->withHeaders($this->headers)->postJson("/api/resources/{$this->resource->id}/bookings", $payload, ['Idempotency-Key' => 'empty-metadata']);
+    $this->withHeaders($this->headers)->postJson("/api/resources/{$this->resource->id}/bookings", $payload + ['metadata' => []], ['Idempotency-Key' => 'empty-metadata'])
+        ->assertOk()->assertExactJson($first->json());
+});

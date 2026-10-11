@@ -61,6 +61,7 @@ Severity is relative to this service's one job: returning a *wrong or missing* b
 - **Fix:** `->utc()` in `BusyRangesController.php:24-27`.
 
 ### B5. Idempotency replay ignores the payload — **verified**
+**Status:** Fixed 2026-10-10 on `fix/phase-4-idempotency`: compare normalized UTC seconds and retained metadata against the stored row; mismatches return 422 `idempotency_mismatch`. No fingerprint column or migration. Pre-check and 23505 recovery share the full-object replay path.
 - `BookingController.php:60-70`: any request with an existing key returns the stored booking with 200, even when `starts_at`/`ends_at` differ. Reusing key `abc` with a different time returned the *old* booking as a success.
 - A consumer bug that reuses a key (a per-appointment key reused after a reschedule) therefore looks like a successful booking at the new time, while the engine holds the old time.
 - **Fix:** store a request fingerprint (hash of start, end and metadata). On a mismatch return 422 or 409 with a distinct error code.

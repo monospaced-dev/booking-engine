@@ -142,7 +142,10 @@ paths:
       description: |
         Rejects overlap with other bookings, but does not enforce blackouts.
         An existing Idempotency-Key for this resource returns the stored booking
-        with 200, without comparing payloads. Keys are scoped to the resource.
+        with 200 only when UTC-normalised starts_at, ends_at and retained metadata match.
+        Datetimes compare at the existing stored second precision. Omitted metadata
+        compares as an empty array. A mismatch returns 422 idempotency_mismatch.
+        Keys are scoped to the resource.
         Concurrent replay hardening is not implemented.
         Supplied keys must contain 1–128 ASCII letters, digits, underscores or hyphens.
         Invalid keys return 422 with validation_failed.
@@ -194,7 +197,28 @@ paths:
                   message: {type: string}
                   code: {type: string, enum: [booking_conflict]}
                   error: {type: string, description: Retained legacy alias of message}
-        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '422':
+          description: Invalid input or key (validation_failed), or key reuse with a different payload (idempotency_mismatch)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [message, code, errors]
+                    properties:
+                      message: {type: string}
+                      code: {type: string, enum: [validation_failed]}
+                      errors:
+                        type: object
+                        additionalProperties:
+                          type: array
+                          items: {type: string}
+                  - type: object
+                    additionalProperties: false
+                    required: [message, code]
+                    properties:
+                      message: {type: string}
+                      code: {type: string, enum: [idempotency_mismatch]}
         default: {$ref: '#/components/responses/Error'}
   /resources/{resource}/bookings/{booking}:
     parameters:
