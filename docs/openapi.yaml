@@ -145,7 +145,8 @@ paths:
         with 200 only when UTC-normalised starts_at, ends_at and retained metadata match.
         Datetimes compare at the existing stored second precision. Omitted metadata
         compares as an empty array. A mismatch returns 422 idempotency_mismatch.
-        Keys are scoped to the resource.
+        Keys are scoped to the resource. PATCH leaves the stored key untouched;
+        retrying the original POST after a reschedule returns 422 idempotency_mismatch.
         Concurrent retries recover both exclusion and unique constraint races by
         re-selecting the resource-scoped key and applying the same comparison.
         An exclusion failure without a stored row for this key remains 409 booking_conflict.
@@ -177,11 +178,15 @@ paths:
       responses:
         '201':
           description: Full stored booking
+          headers:
+            ETag: {$ref: '#/components/headers/BookingETag'}
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Booking'}
         '200':
           description: Full stored booking on idempotency replay
+          headers:
+            ETag: {$ref: '#/components/headers/BookingETag'}
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Booking'}
@@ -229,6 +234,100 @@ paths:
         in: path
         required: true
         schema: {type: integer, minimum: 1}
+    get:
+      operationId: getBooking
+      summary: Get a full booking belonging to this resource
+      responses:
+        '200':
+          description: Full stored booking
+          headers:
+            ETag: {$ref: '#/components/headers/BookingETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Booking'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: rescheduleBooking
+      summary: Atomically reschedule a booking
+      description: |
+        Changes only starts_at and ends_at, at stored UTC-second precision.
+        Requires one strong quoted lock_version via If-Match. Weak tags, wildcards,
+        lists and malformed tags fail with 412. Missing If-Match returns 428.
+        The version comparison and increment occur in the same UPDATE as the times.
+        Stale versions return 412 before overlap checking; failed requests retain
+        the previous range and version. Every success, including a no-op, increments
+        lock_version. Self-overlap and adjacency are allowed. Other bookings cause
+        409; blackouts are not enforced. Metadata and resource changes are ignored.
+        Idempotency-Key is ignored and the stored key is left untouched. A subsequent
+        POST retry with the original key and original times returns 422
+        idempotency_mismatch after the times have changed.
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          description: One strong quoted lock_version from the latest booking ETag.
+          schema: {type: string, pattern: '^"[1-9][0-9]{0,9}"$', example: '"1"'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [starts_at, ends_at]
+              properties:
+                starts_at: {$ref: '#/components/schemas/DatetimeInput'}
+                ends_at:
+                  allOf:
+                    - {$ref: '#/components/schemas/DatetimeInput'}
+                  description: Must be later than starts_at.
+      responses:
+        '200':
+          description: Full rescheduled booking
+          headers:
+            ETag: {$ref: '#/components/headers/BookingETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Booking'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: Overlapping booking; previous range and version retained
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [message, code, error]
+                properties:
+                  message: {type: string}
+                  code: {type: string, enum: [booking_conflict]}
+                  error: {type: string}
+        '412':
+          description: If-Match does not match the current version
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [message, code]
+                properties:
+                  message: {type: string}
+                  code: {type: string, enum: [precondition_failed]}
+        '428':
+          description: If-Match header required
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [message, code]
+                properties:
+                  message: {type: string}
+                  code: {type: string, enum: [precondition_required]}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        default: {$ref: '#/components/responses/Error'}
     delete:
       operationId: deleteBooking
       summary: Delete a booking belonging to this resource
@@ -336,6 +435,11 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         default: {$ref: '#/components/responses/Error'}
 components:
+  headers:
+    BookingETag:
+      required: true
+      description: Strong quoted lock_version, matching the booking body.
+      schema: {type: string, pattern: '^"[1-9][0-9]*"$', example: '"1"'}
   securitySchemes:
     ApiKey:
       type: apiKey
@@ -443,7 +547,7 @@ components:
     Booking:
       type: object
       additionalProperties: false
-      required: [id, resource_id, external_type, external_id, metadata, idempotency_key, starts_at, ends_at, created_at, updated_at]
+      required: [id, resource_id, external_type, external_id, metadata, idempotency_key, starts_at, ends_at, created_at, updated_at, lock_version]
       properties:
         id: {type: integer}
         resource_id: {type: integer}
@@ -458,6 +562,7 @@ components:
             - type: object
               properties:
                 appointment_id: {type: integer}
+        lock_version: {type: integer, minimum: 1}
         idempotency_key: {type: string, nullable: true}
         starts_at: {$ref: '#/components/schemas/UtcTimestamp'}
         ends_at: {$ref: '#/components/schemas/UtcTimestamp'}

@@ -3,6 +3,7 @@
 namespace App\Actions;
 
 use App\Exceptions\BookingConflictException;
+use App\Helpers\BookingRange;
 use App\Models\Booking;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
@@ -22,11 +23,7 @@ class CreateBooking
         array $metadata = [],
         ?string $idempotencyKey = null,
     ): Booking {
-        $during = sprintf(
-            '[%s,%s)',
-            $startsAt->format('Y-m-d H:i:sP'),
-            $endsAt->format('Y-m-d H:i:sP')
-        );
+        $during = BookingRange::literal($startsAt, $endsAt);
 
         try {
             // Wrapped in DB::transaction() so a failed INSERT rolls back to a
@@ -35,7 +32,7 @@ class CreateBooking
                 return DB::selectOne(
                     'INSERT INTO bookings (resource_id, external_type, external_id, during, metadata, idempotency_key, created_at, updated_at)
                  VALUES (?, ?, ?, ?::tstzrange, ?, ?, now(), now())
-                 RETURNING id, resource_id, external_type, external_id, during, metadata, idempotency_key, created_at, updated_at',
+                 RETURNING lock_version, id, resource_id, external_type, external_id, during, metadata, idempotency_key, created_at, updated_at',
                     [
                         $resourceId,
                         $externalType,

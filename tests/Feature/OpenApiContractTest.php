@@ -4,8 +4,10 @@ use App\Actions\CreateBooking;
 use App\Models\BlackoutDate;
 use App\Models\Resource;
 use Carbon\Carbon;
+use GuzzleHttp\Psr7\Request;
 use Illuminate\Support\Facades\DB;
 use League\OpenAPIValidation\PSR7\Exception\ValidationFailed;
+use League\OpenAPIValidation\PSR7\ValidatorBuilder;
 use Tests\Support\OpenApi;
 
 it('loads a valid hand-written OpenAPI document', function () {
@@ -91,6 +93,7 @@ it('validates 401 on every protected operation', function (string $method, strin
 })->with([
     ['post', '/resources'], ['put', '/resources/{resource}'],
     ['get', '/resources/{resource}/bookings'], ['post', '/resources/{resource}/bookings'],
+    ['get', '/resources/{resource}/bookings/{booking}'], ['patch', '/resources/{resource}/bookings/{booking}'],
     ['delete', '/resources/{resource}/bookings/{booking}'], ['get', '/resources/{resource}/busy'],
     ['get', '/resources/{resource}/blackout-dates'], ['post', '/resources/{resource}/blackout-dates'],
     ['delete', '/resources/{resource}/blackout-dates/{blackoutDate}'],
@@ -102,7 +105,7 @@ it('validates missing-resource 404 on every resource-bound operation', function 
     $this->json($method, $uri)->assertNotFound()->assertOpenApi($operation, $method);
 })->with([
     ['put', '/resources/{resource}'], ['get', '/resources/{resource}/bookings'],
-    ['post', '/resources/{resource}/bookings'], ['delete', '/resources/{resource}/bookings/{booking}'],
+    ['post', '/resources/{resource}/bookings'], ['get', '/resources/{resource}/bookings/{booking}'], ['patch', '/resources/{resource}/bookings/{booking}'], ['delete', '/resources/{resource}/bookings/{booking}'],
     ['get', '/resources/{resource}/busy'], ['get', '/resources/{resource}/blackout-dates'],
     ['post', '/resources/{resource}/blackout-dates'], ['delete', '/resources/{resource}/blackout-dates/{blackoutDate}'],
 ]);
@@ -158,3 +161,38 @@ it('rejects a legacy conflict envelope lacking message or code', function () {
     expect(fn () => OpenApi::assertResponse($response, '/resources/{resource}/bookings', 'post'))
         ->toThrow(ValidationFailed::class);
 });
+
+it('rejects missing or malformed booking version response contracts', function (string $mutation) {
+    $resource = Resource::factory()->create();
+    $response = $this->withHeaders(apiKeyHeader())->postJson("/api/resources/{$resource->id}/bookings", [
+        'starts_at' => '2026-07-21T09:00:00Z', 'ends_at' => '2026-07-21T10:00:00Z',
+    ])->assertCreated();
+    if ($mutation === 'missing version') {
+        $payload = $response->json();
+        unset($payload['lock_version']);
+        $response->baseResponse->setContent(json_encode($payload));
+    } elseif ($mutation === 'missing ETag') {
+        $response->headers->remove('ETag');
+    } else {
+        $response->headers->set('ETag', '1');
+    }
+    expect(fn () => OpenApi::assertResponse($response, '/resources/{resource}/bookings', 'post'))
+        ->toThrow(ValidationFailed::class);
+})->with(['missing version', 'missing ETag', 'unquoted ETag']);
+
+it('validates the PATCH If-Match request contract', function (?string $tag) {
+    $validator = (new ValidatorBuilder)
+        ->fromYamlFile(base_path('docs/openapi.yaml'))->getRequestValidator();
+    $headers = ['Content-Type' => 'application/json', 'X-API-Key' => 'spec-key'];
+    if ($tag !== null) {
+        $headers['If-Match'] = $tag;
+    }
+    $request = new Request('PATCH', '/api/resources/1/bookings/1', $headers, json_encode([
+        'starts_at' => '2026-07-21T09:00:00Z', 'ends_at' => '2026-07-21T10:00:00Z',
+    ]));
+    if ($tag === '"1"') {
+        expect($validator->validate($request)->method())->toBe('patch');
+    } else {
+        expect(fn () => $validator->validate($request))->toThrow(ValidationFailed::class);
+    }
+})->with(['"1"', null, '1', 'W/"1"', '*']);

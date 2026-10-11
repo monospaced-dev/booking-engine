@@ -2,8 +2,11 @@
 
 namespace App\Models;
 
+use App\Helpers\BookingRange;
 use App\Models\Concerns\SerializesUtcTimestamps;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -13,9 +16,14 @@ class Booking extends Model
 
     protected $fillable = ['resource_id', 'external_type', 'external_id', 'metadata', 'id', 'starts_at', 'ends_at', 'idempotency_key'];
 
-    protected $casts = ['metadata' => 'array', 'starts_at' => 'datetime', 'ends_at' => 'datetime'];
+    protected $casts = ['lock_version' => 'integer', 'metadata' => 'array', 'starts_at' => 'datetime', 'ends_at' => 'datetime'];
 
     protected $hidden = ['during'];
+
+    public function scopeOverlapping(Builder $query, CarbonInterface $from, CarbonInterface $to): Builder
+    {
+        return $query->whereRaw('during && ?::tstzrange', [BookingRange::literal($from, $to)]);
+    }
 
     public function resource(): BelongsTo
     {
