@@ -55,14 +55,7 @@ class CreateBooking {
             throw $e;
         }
 
-        $booking = new Booking([
-            'id' => $row->id,
-            'resource_id' => $row->resource_id,
-            'external_type' => $row->external_type,
-            'external_id' => $row->external_id,
-            'metadata' => json_decode($row->metadata, true),
-            'idempotency_key' => $row->idempotency_key,
-        ]);
+        $booking = (new Booking())->newFromBuilder((array) $row);
 
         $parsed = $booking->parseDuring($row->during);
 
