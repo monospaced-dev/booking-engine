@@ -24,13 +24,7 @@ class BookingController extends Controller
 
         if (! empty($validated['from']) && ! empty($validated['to'])) {
             $bookings = $resource->bookings()
-                ->whereRaw('during && ?::tstzrange', [
-                    sprintf(
-                        '[%s,%s)',
-                        Carbon::parse($validated['from'])->utc()->toIso8601String(),
-                        Carbon::parse($validated['to'])->utc()->toIso8601String(),
-                    ),
-                ])
+                ->overlapping(Carbon::parse($validated['from'])->utc(), Carbon::parse($validated['to'])->utc())
                 ->get();
         } else {
             \Log::debug("BookingController: Fetching all bookings for resource {$resource->id}");

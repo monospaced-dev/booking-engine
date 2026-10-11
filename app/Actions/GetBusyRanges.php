@@ -2,7 +2,6 @@
 
 namespace App\Actions;
 
-
 use App\Helpers\Interval;
 use App\Models\Resource;
 use Carbon\Carbon;
@@ -12,18 +11,11 @@ class GetBusyRanges
 {
     /**
      * Get busy times in given time period for resource excluding bookings and blackouts.
-     *
-     * @param Resource $resource
-     * @param Carbon $from
-     * @param Carbon $to
-     * @return array
      */
     public function handle(Resource $resource, Carbon $from, Carbon $to): array
     {
         $bookings = $resource->bookings()
-            ->whereRaw('during && ?::tstzrange', [
-                sprintf('[%s,%s)', $from->toIso8601String(), $to->toIso8601String())
-            ])
+            ->overlapping($from, $to)
             ->get();
 
         $blackouts = $resource->blackoutDates()
@@ -40,11 +32,11 @@ class GetBusyRanges
         return Interval::mergeExclusions(['start' => $from, 'end' => $to], $exclusions);
     }
 
-
     private function bookingsToExclusions(Collection $bookings): array
     {
-        return $bookings->map(function ($booking)  {
+        return $bookings->map(function ($booking) {
             $parsed = $booking->parseDuring($booking->during);
+
             return ['start' => $parsed['starts_at'], 'end' => $parsed['ends_at']];
         })->all();
     }
