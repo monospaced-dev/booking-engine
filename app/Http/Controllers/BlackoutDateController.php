@@ -45,7 +45,7 @@ class BlackoutDateController extends Controller
 
         $blackoutDate = $resource->blackoutDates()->create($validated);
 
-        return response()->json($blackoutDate, 201);
+        return response()->json($blackoutDate->refresh(), 201);
     }
 
     /**
