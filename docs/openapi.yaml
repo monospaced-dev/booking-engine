@@ -233,7 +233,8 @@ paths:
       - name: booking
         in: path
         required: true
-        schema: {type: integer, minimum: 1}
+        description: Path IDs must match [0-9]{1,18}; invalid IDs return 404 route_not_found.
+      schema: {type: string, pattern: '^[0-9]{1,18}$'}
     get:
       operationId: getBooking
       summary: Get a full booking belonging to this resource
@@ -473,7 +474,7 @@ components:
             required: [message, code]
             properties:
               message: {type: string}
-              code: {type: string, enum: [not_found]}
+              code: {type: string, enum: [not_found, route_not_found]}
     ValidationFailed:
       description: Request validation failed
       content:

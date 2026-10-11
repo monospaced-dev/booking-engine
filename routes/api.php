@@ -27,6 +27,10 @@ Route::get('/health', function () {
 
 Route::get('/ping', fn () => response()->noContent());
 
+Route::pattern('resource', '[0-9]{1,18}');
+Route::pattern('booking', '[0-9]{1,18}');
+Route::pattern('blackoutDate', '[0-9]{1,18}');
+
 Route::middleware('auth.apikey')->group(function () {
     Route::post('/resources/{resource}/bookings', [BookingController::class, 'store']);
     Route::get('/resources/{resource}/bookings', [BookingController::class, 'index']);
