@@ -2,10 +2,17 @@
 
 namespace App\Providers;
 
+use App\Metrics\RecordRequest;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
+use Prometheus\CollectorRegistry;
+use Prometheus\Storage\Adapter;
+use Prometheus\Storage\APC;
+use Prometheus\Storage\InMemory;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -14,6 +21,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->singleton(Adapter::class, fn () => $this->app->runningUnitTests()
+            ? new InMemory
+            : new APC);
+        $this->app->singleton(CollectorRegistry::class, fn ($app) => new CollectorRegistry($app->make(Adapter::class), false));
         if ($this->app->environment('local')) {
             $this->app->register(TelescopeServiceProvider::class);
         }
@@ -24,6 +35,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Event::listen(RequestHandled::class, RecordRequest::class);
         $this->callAfterResolving(RateLimiter::class, function (RateLimiter $limiter): void {
             $limiter->for('api', fn (Request $request) => Limit::perMinute(config('api.rate_limit_per_minute'))
                 ->by((string) $request->attributes->get('api_key_id'))

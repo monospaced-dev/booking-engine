@@ -1,11 +1,14 @@
 <?php
 
+use App\Http\Controllers\MetricsController;
 use App\Http\Middleware\AuthenticateApiKey;
+use App\Http\Middleware\StartRequestTimer;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\ThrottleRequests;
+use Illuminate\Support\Facades\Route;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -15,8 +18,10 @@ return Application::configure(basePath: dirname(__DIR__))
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
+        then: fn () => Route::get('/metrics', MetricsController::class),
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(StartRequestTimer::class);
         $middleware->prependToPriorityList(ThrottleRequests::class, AuthenticateApiKey::class);
         $middleware->alias([
             'auth.apikey' => AuthenticateApiKey::class,
