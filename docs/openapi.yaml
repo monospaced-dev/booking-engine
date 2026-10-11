@@ -55,8 +55,9 @@ paths:
       operationId: findOrCreateResource
       summary: Find or create an external resource
       description: |
-        Existing resources retain their stored timezone even if a different
-        timezone is supplied. Use PUT to change it. The created flag is retained.
+        Existing resources with the same timezone return 200. A different timezone
+        returns 409 timezone_mismatch and leaves the resource unchanged, including
+        after a concurrent creation race. The created flag is retained.
       requestBody:
         required: true
         content:
@@ -80,6 +81,16 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ResourceResult'}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '409':
+          description: Existing resource timezone differs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, code]
+                properties:
+                  message: {type: string}
+                  code: {type: string, enum: [timezone_mismatch]}
         '422': {$ref: '#/components/responses/ValidationFailed'}
         default: {$ref: '#/components/responses/Error'}
   /resources/{resource}:
@@ -88,6 +99,7 @@ paths:
     put:
       operationId: updateResource
       summary: Change resource timezone
+      description: Changing a timezone shifts existing blackouts; the later blackout-range work removes this hazard.
       requestBody:
         required: true
         content:

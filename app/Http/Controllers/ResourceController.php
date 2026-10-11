@@ -28,6 +28,11 @@ class ResourceController extends Controller
             ]
         );
 
+        // firstOrCreate also re-selects after a concurrent unique violation.
+        if ($resource->timezone !== $validated['timezone']) {
+            return response()->json(['message' => 'Resource timezone does not match.', 'code' => 'timezone_mismatch'], 409);
+        }
+
         return response()->json([
             'id' => $resource->id,
             'external_type' => $resource->external_type,

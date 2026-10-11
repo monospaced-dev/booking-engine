@@ -40,3 +40,12 @@ it('returns 404 updating a missing resource', function () {
     $this->withHeaders(apiKeyHeader())->putJson('/api/resources/999999', ['timezone' => 'UTC'])
         ->assertNotFound()->assertJsonPath('code', 'not_found');
 });
+
+it('rejects existing resources with a different timezone', function () {
+    $resource = Resource::factory()->create(['timezone' => 'America/Chicago']);
+    $before = $resource->getAttributes();
+    $this->withHeaders(apiKeyHeader())->postJson('/api/resources', [
+        'external_type' => $resource->external_type, 'external_id' => $resource->external_id, 'timezone' => 'Asia/Tokyo',
+    ])->assertConflict()->assertJsonPath('code', 'timezone_mismatch')->assertOpenApi('/resources', 'post');
+    expect($resource->fresh()->getAttributes())->toEqual($before);
+});
