@@ -103,7 +103,7 @@ class BookingController extends Controller
     public function destroy(Resource $resource, Booking $booking)
     {
         if ($booking->resource_id !== $resource->id) {
-            return response()->json(['message' => 'Forbidden'], 403);
+            abort(404);
         }
 
         $booking->delete();

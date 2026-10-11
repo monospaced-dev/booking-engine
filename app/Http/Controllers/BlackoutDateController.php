@@ -59,7 +59,7 @@ class BlackoutDateController extends Controller
     public function destroy(Resource $resource, BlackoutDate $blackoutDate): JsonResponse|Response
     {
         if ($blackoutDate->resource_id !== $resource->id) {
-            return response()->json(['message' => 'Forbidden'], 403);
+            abort(404);
         }
 
         $blackoutDate->delete();

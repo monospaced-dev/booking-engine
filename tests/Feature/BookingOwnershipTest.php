@@ -27,7 +27,7 @@ it('deletes a booking when it belongs to the resource in the URL', function () {
     $this->assertDatabaseMissing('bookings', ['id' => $booking->id]);
 });
 
-it('returns 403 when deleting a booking through the wrong resource', function () {
+it('returns 404 when deleting a booking through the wrong resource', function () {
     $resourceA = Resource::factory()->create();
     $resourceB = Resource::factory()->create();
     $headers = apiKeyHeader();
@@ -44,6 +44,6 @@ it('returns 403 when deleting a booking through the wrong resource', function ()
     $response = $this->withHeaders($headers)
         ->deleteJson("/api/resources/{$resourceB->id}/bookings/{$booking->id}");
 
-    $response->assertStatus(403);
+    $response->assertStatus(404)->assertJsonPath('code', 'not_found');
     $this->assertDatabaseHas('bookings', ['id' => $booking->id]);
 });
