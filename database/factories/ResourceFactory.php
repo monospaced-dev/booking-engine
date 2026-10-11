@@ -1,10 +1,8 @@
 <?php
 
-
 namespace Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class ResourceFactory extends Factory
 {
@@ -13,7 +11,6 @@ class ResourceFactory extends Factory
         return [
             'external_type' => 'inspector',
             'external_id' => fake()->unique()->numberBetween(1, 100000),
-            'timezone' => 'America/Chicago',
         ];
     }
 }

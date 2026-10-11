@@ -10,7 +10,7 @@ class Resource extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['external_type', 'external_id', 'timezone'];
+    protected $fillable = ['external_type', 'external_id'];
 
     public function bookings(): HasMany
     {
@@ -21,5 +21,4 @@ class Resource extends Model
     {
         return $this->hasMany(Blackout::class);
     }
-
 }

@@ -4,8 +4,8 @@ use App\Actions\CreateBooking;
 use App\Models\Resource;
 use Carbon\Carbon;
 
-it('formats every busy timestamp as UTC when local-offset windows clip bookings', function (string $timezone, array $window) {
-    $resource = Resource::factory()->create(['timezone' => $timezone]);
+it('formats every busy timestamp as UTC when local-offset windows clip bookings', function (array $window) {
+    $resource = Resource::factory()->create();
     new CreateBooking()->handle(
         resourceId: $resource->id,
         externalType: $resource->external_type,
@@ -26,6 +26,6 @@ it('formats every busy timestamp as UTC when local-offset windows clip bookings'
         }
     }
 })->with([
-    'Chicago' => ['America/Chicago', ['from' => '2026-07-21T10:30:00-05:00', 'to' => '2026-07-21T11:30:00-05:00']],
-    'Tokyo' => ['Asia/Tokyo', ['from' => '2026-07-22T00:30:00+09:00', 'to' => '2026-07-22T01:30:00+09:00']],
+    'Chicago' => [['from' => '2026-07-21T10:30:00-05:00', 'to' => '2026-07-21T11:30:00-05:00']],
+    'Tokyo' => [['from' => '2026-07-22T00:30:00+09:00', 'to' => '2026-07-22T01:30:00+09:00']],
 ]);

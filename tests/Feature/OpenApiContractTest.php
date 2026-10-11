@@ -36,13 +36,12 @@ it('validates real booking create replay list conflict and delete responses', fu
         ->assertOpenApi('/resources/{resource}/bookings/{booking}', 'delete');
 })->with(['empty metadata' => [[]], 'populated metadata' => [['appointment_id' => 7]]]);
 
-it('validates resource create find and update responses', function () {
+it('validates resource create and find responses', function () {
     $this->withHeaders(apiKeyHeader());
-    $payload = ['external_type' => 'inspector', 'external_id' => 7, 'timezone' => 'UTC'];
+    $payload = ['external_type' => 'inspector', 'external_id' => 7];
     $created = $this->postJson('/api/resources', $payload)->assertCreated()->assertOpenApi('/resources', 'post');
     $this->postJson('/api/resources', $payload)->assertOk()->assertOpenApi('/resources', 'post');
-    $this->putJson('/api/resources/'.$created->json('id'), ['timezone' => 'America/Chicago'])
-        ->assertOk()->assertOpenApi('/resources/{resource}', 'put');
+
 });
 
 it('validates blackout create list and delete responses', function (array $payload) {
@@ -63,7 +62,7 @@ it('validates blackout create list and delete responses', function (array $paylo
 ]);
 
 it('validates populated and empty busy responses', function () {
-    $resource = Resource::factory()->create(['timezone' => 'UTC']);
+    $resource = Resource::factory()->create();
     $this->withHeaders(apiKeyHeader());
     $uri = "/api/resources/{$resource->id}/busy?".http_build_query([
         'from' => '2026-07-21T00:00:00Z', 'to' => '2026-07-22T00:00:00Z',
@@ -91,7 +90,7 @@ it('validates 401 on every protected operation', function (string $method, strin
     $uri = '/api'.strtr($operation, ['{resource}' => $resource->id, '{booking}' => $booking->id, '{blackout}' => $blackout->id]);
     $this->json($method, $uri)->assertUnauthorized()->assertOpenApi($operation, $method);
 })->with([
-    ['post', '/resources'], ['put', '/resources/{resource}'],
+    ['post', '/resources'],
     ['get', '/resources/{resource}/bookings'], ['post', '/resources/{resource}/bookings'],
     ['get', '/resources/{resource}/bookings/{booking}'], ['patch', '/resources/{resource}/bookings/{booking}'],
     ['delete', '/resources/{resource}/bookings/{booking}'], ['get', '/resources/{resource}/busy'],
@@ -104,7 +103,7 @@ it('validates missing-resource 404 on every resource-bound operation', function 
     $uri = '/api'.strtr($operation, ['{resource}' => 999999, '{booking}' => 999999, '{blackout}' => 999999]);
     $this->json($method, $uri)->assertNotFound()->assertOpenApi($operation, $method);
 })->with([
-    ['put', '/resources/{resource}'], ['get', '/resources/{resource}/bookings'],
+    ['get', '/resources/{resource}/bookings'],
     ['post', '/resources/{resource}/bookings'], ['get', '/resources/{resource}/bookings/{booking}'], ['patch', '/resources/{resource}/bookings/{booking}'], ['delete', '/resources/{resource}/bookings/{booking}'],
     ['get', '/resources/{resource}/busy'], ['get', '/resources/{resource}/blackouts'],
     ['post', '/resources/{resource}/blackouts'], ['delete', '/resources/{resource}/blackouts/{blackout}'],
@@ -119,7 +118,7 @@ it('validates 422 on every operation accepting validated inputs', function (stri
     }
     $this->json($method, $uri)->assertUnprocessable()->assertOpenApi($operation, $method);
 })->with([
-    ['post', '/resources'], ['put', '/resources/{resource}'], ['get', '/resources/{resource}/bookings'],
+    ['post', '/resources'], ['get', '/resources/{resource}/bookings'],
     ['post', '/resources/{resource}/bookings'], ['get', '/resources/{resource}/busy'],
     ['post', '/resources/{resource}/blackouts'], ['get', '/resources/{resource}/blackouts'],
 ]);

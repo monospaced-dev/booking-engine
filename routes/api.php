@@ -34,7 +34,6 @@ Route::middleware('auth.apikey')->group(function () {
     Route::delete('/resources/{resource}/bookings/{booking}', [BookingController::class, 'destroy']);
 
     Route::post('/resources', [ResourceController::class, 'store']);
-    Route::put('resources/{resource}', [ResourceController::class, 'update']);
     Route::get('/resources/{resource}/busy', [BusyRangesController::class, 'index']);
 
     Route::get('/resources/{resource}/blackouts', [BlackoutController::class, 'index']);

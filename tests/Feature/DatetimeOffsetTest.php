@@ -11,7 +11,7 @@ it('accepts explicit offsets and rejects a naive datetime on every datetime inpu
     $endField = $isPost ? 'ends_at' : 'to';
 
     foreach (['Z', '-05:00', '+09:00', null] as $offset) {
-        $resource = Resource::factory()->create(['timezone' => 'America/Chicago']);
+        $resource = Resource::factory()->create();
         $start = Carbon::parse('2026-07-21T15:00:00Z');
         $end = Carbon::parse('2026-07-21T16:00:00Z');
         $input = [$startField => $start->toIso8601String(), $endField => $end->toIso8601String()];
@@ -24,7 +24,7 @@ it('accepts explicit offsets and rejects a naive datetime on every datetime inpu
             $input[$field] = $field === $startField ? '2026-07-21T09:00:00' : '2026-07-21T21:00:00';
         }
 
-        if (!$isPost) {
+        if (! $isPost) {
             new CreateBooking()->handle(
                 resourceId: $resource->id, externalType: $resource->external_type,
                 externalId: $resource->external_id, startsAt: $start, endsAt: $end,

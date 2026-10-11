@@ -22,7 +22,7 @@ it('keeps the conflict error and adds message and code', function () {
 
 it('adds a validation code and preserves field errors', function () {
     $this->withHeaders(apiKeyHeader())->postJson('/api/resources', [])->assertUnprocessable()
-        ->assertJsonPath('code', 'validation_failed')->assertJsonValidationErrors(['external_type', 'external_id', 'timezone']);
+        ->assertJsonPath('code', 'validation_failed')->assertJsonValidationErrors(['external_type', 'external_id']);
 });
 
 it('normalizes framework errors including unexpected failures', function (int $status, string $code) {
