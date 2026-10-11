@@ -1,4 +1,6 @@
-# Phase 3 consumer contract changes
+# Consumer contract changes
+
+## Phase 3
 
 Implemented on `fix/phase-3-contract`; contract source: [openapi.yaml](openapi.yaml).
 Update BookingEngineClient before bringing the offline consumer back online.
@@ -212,3 +214,55 @@ OpenAPI real-response and request validation accept integer ID paths.
 
 Full suite: **258 tests passed, 1,105 assertions** on PostgreSQL **17.11**,
 using `--fail-on-risky`. Pint and `git diff --check` pass.
+
+
+## Phase 8: operability and small leftovers
+
+Implemented on `feat/phase-8-operability`. No migrations or new infrastructure.
+
+| Endpoint | Before | After |
+|---|---|---|
+| Authenticated `/api/*` routes | Unlimited requests | One budget per API key across routes; default 600/minute. Excess returns 429 `too_many_requests` plus `Retry-After` seconds. Invalid/inactive keys still return 401. |
+| `/api/health`, `/api/ping` | Unauthenticated probes | Still unauthenticated and exempt from throttling. |
+| Authenticated API-key usage | Writes `last_used_at` on every request | One conditional UPDATE changes it only when null or strictly more than 60 seconds old; freshness checked in SQL. |
+| GET `/api/resources/{resource}/bookings` and `/blackouts` | No ordering guarantee | Range start ascending, then id ascending, with or without an overlap window. Full unclipped ranges and response shapes unchanged. |
+| DELETE `/api/resources/{resource}/bookings/{booking}` | Unconditional delete; If-Match ignored | Optional one strong quoted lock_version (e.g. `"1"`), matching the current version in the same DELETE. Stale/malformed tags return 412 `precondition_failed` without deleting. Absent header preserves unconditional 204. Missing/wrong-parent rows return 404. |
+| GET `/metrics` | No operational endpoint | Prometheus text format; independent bearer token, no API key. Unset/empty configured token returns 404; missing/wrong credentials return 401. |
+| GET `/` | Unused welcome page | 404; welcome view removed. |
+
+New environment variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `API_RATE_LIMIT_PER_MINUTE` | `600` | Positive request budget per API key per minute, shared across authenticated routes. |
+| `METRICS_TOKEN` | Unset/empty | Independent scrape secret; leave empty to disable `/metrics` (404). |
+
+The application uses its configured cache store for throttling. The production
+repository default is `database` (`config/cache.php`, `.env.example`, and no
+Compose override). Counts are shared across pods using the same database/cache
+table and prefix. External production environment overrides are not visible in
+this checkout; `file`/`array` overrides make counts local instead.
+
+Metrics use `promphp/prometheus_client_php` 2.15.1 with APCu in production (extension
+added to the FPM image) and isolated in-memory storage in tests. The request counter
+`booking_engine_http_requests_total` and histogram
+`booking_engine_http_request_duration_seconds` have `method`, `route`, `status`
+labels. `route` is the URI template with its leading slash, or `unmatched`; raw
+paths/query strings never become labels. Final rendered failures are counted.
+Scrape requests themselves are excluded. APCu metrics are shared by FPM workers
+in one pod, reset on restart/eviction, and are not shared between pods.
+
+Scrape **HTTP port 8080, path `/metrics`** on each pod with
+`Authorization: Bearer <METRICS_TOKEN>`. Port 9000 is FastCGI. Operational metrics
+are deliberately excluded from OpenAPI; deployment configuration belongs in the
+README. This phase changes no Kubernetes manifests.
+
+Regression tests reproduced missing throttling, excessive usage writes, missing
+metrics access/collection, unordered lists, ignored DELETE versions, and the
+welcome page before implementing those behaviors. A real two-process PostgreSQL
+race verifies DELETE rechecks If-Match after a competing PATCH commits. OpenAPI
+real-response tests cover 429 and 412; the optional DELETE request header is
+specified, alongside deterministic list ordering. The full PostgreSQL 17 suite
+passes with both the default test array cache and production-default database cache, using `--fail-on-risky`: **291 tests, 1,263 assertions**. The production FPM
+image builds successfully with APCu; separate FastCGI requests verify counters and
+histograms persist across requests and bearer-protected scrapes are excluded.
