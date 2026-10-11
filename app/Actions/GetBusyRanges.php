@@ -27,7 +27,10 @@ class GetBusyRanges
             ->get();
 
         $blackouts = $resource->blackoutDates()
-            ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
+            ->whereBetween('date', [
+                $from->copy()->setTimezone($resource->timezone)->subDay()->toDateString(),
+                $to->copy()->setTimezone($resource->timezone)->addDay()->toDateString(),
+            ])
             ->get();
 
         $bookingExclusions = $this->bookingsToExclusions($bookings);

@@ -6,6 +6,7 @@ use App\Actions\CreateBooking;
 use App\Exceptions\BookingConflictException;
 use App\Models\Booking;
 use App\Models\Resource;
+use App\Rules\ExplicitDatetimeOffset;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 
@@ -14,8 +15,8 @@ class BookingController extends Controller
     public function index(Request $request, Resource $resource)
     {
         $validated = $request->validate([
-            'from' => 'required_with:to|nullable|date',
-            'to' => 'required_with:from|nullable|date|after:from',
+            'from' => ['required_with:to', 'nullable', 'date', new ExplicitDatetimeOffset()],
+            'to' => ['required_with:from', 'nullable', 'date', new ExplicitDatetimeOffset(), 'after:from'],
         ]);
 
         if (!empty($validated['from']) && !empty($validated['to'])) {
@@ -23,8 +24,8 @@ class BookingController extends Controller
                 ->whereRaw('during && ?::tstzrange', [
                     sprintf(
                         '[%s,%s)',
-                        Carbon::parse($validated['from'])->toIso8601String(),
-                        Carbon::parse($validated['to'])->toIso8601String(),
+                        Carbon::parse($validated['from'])->utc()->toIso8601String(),
+                        Carbon::parse($validated['to'])->utc()->toIso8601String(),
                     ),
                 ])
                 ->get();
@@ -49,8 +50,8 @@ class BookingController extends Controller
     public function store(Request $request, Resource $resource, CreateBooking $createBooking)
     {
         $validated = $request->validate([
-            'starts_at' => 'required|date',
-            'ends_at' => 'required|date|after:starts_at',
+            'starts_at' => ['required', 'date', new ExplicitDatetimeOffset()],
+            'ends_at' => ['required', 'date', new ExplicitDatetimeOffset(), 'after:starts_at'],
             'metadata' => 'sometimes|array',
             'metadata.appointment_id' => 'sometimes|integer',
         ]);
@@ -74,8 +75,8 @@ class BookingController extends Controller
                 resourceId: $resource->id,
                 externalType: $resource->external_type,
                 externalId: $resource->external_id,
-                startsAt: Carbon::parse($validated['starts_at']),
-                endsAt: Carbon::parse($validated['ends_at']),
+                startsAt: Carbon::parse($validated['starts_at'])->utc(),
+                endsAt: Carbon::parse($validated['ends_at'])->utc(),
                 metadata: $validated['metadata'] ?? [],
                 idempotencyKey: $idempotencyKey,
             );
