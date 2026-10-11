@@ -246,7 +246,7 @@ paths:
         in: path
         required: true
         description: Path IDs must match [0-9]{1,18}; invalid IDs return 404 route_not_found.
-        schema: {type: string, pattern: '^[0-9]{1,18}$'}
+        schema: {type: integer, minimum: 1, maximum: 999999999999999999}
     get:
       operationId: getBooking
       summary: Get a full booking belonging to this resource
@@ -439,7 +439,7 @@ paths:
       - name: blackoutDate
         in: path
         required: true
-        schema: {type: string, pattern: '^[0-9]{1,18}$'}
+        schema: {type: integer, minimum: 1, maximum: 999999999999999999}
     delete:
       operationId: deleteBlackoutDate
       summary: Delete a blackout belonging to this resource
@@ -464,7 +464,7 @@ components:
       name: resource
       in: path
       required: true
-      schema: {type: string, pattern: '^[0-9]{1,18}$'}
+      schema: {type: integer, minimum: 1, maximum: 999999999999999999}
   responses:
     NoContent:
       description: Success with an empty response body

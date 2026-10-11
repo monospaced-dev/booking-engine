@@ -22,9 +22,9 @@ Route::get('/health', function () {
 
 Route::get('/ping', fn () => response()->noContent());
 
-Route::pattern('resource', '[0-9]{1,18}');
-Route::pattern('booking', '[0-9]{1,18}');
-Route::pattern('blackoutDate', '[0-9]{1,18}');
+Route::pattern('resource', '[1-9][0-9]{0,17}');
+Route::pattern('booking', '[1-9][0-9]{0,17}');
+Route::pattern('blackoutDate', '[1-9][0-9]{0,17}');
 
 Route::middleware('auth.apikey')->group(function () {
     Route::post('/resources/{resource}/bookings', [BookingController::class, 'store']);
