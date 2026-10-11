@@ -7,6 +7,7 @@ use App\Actions\RescheduleBooking;
 use App\Exceptions\BookingConflictException;
 use App\Models\Booking;
 use App\Models\Resource;
+use App\Rules\BookingDuration;
 use App\Rules\ExplicitDatetimeOffset;
 use App\Rules\FlatMetadata;
 use Carbon\Carbon;
@@ -57,7 +58,7 @@ class BookingController extends Controller
 
         $validated = $request->validate([
             'starts_at' => ['required', 'date', new ExplicitDatetimeOffset],
-            'ends_at' => ['required', 'date', new ExplicitDatetimeOffset, 'after:starts_at'],
+            'ends_at' => ['required', 'date', new ExplicitDatetimeOffset, 'after:starts_at', new BookingDuration($request->input('starts_at'))],
             'metadata' => ['sometimes', 'array', new FlatMetadata(is_object($json->metadata ?? null))],
         ]);
 
@@ -166,7 +167,7 @@ class BookingController extends Controller
 
         $validated = $request->validate([
             'starts_at' => ['required', 'date', new ExplicitDatetimeOffset],
-            'ends_at' => ['required', 'date', new ExplicitDatetimeOffset, 'after:starts_at'],
+            'ends_at' => ['required', 'date', new ExplicitDatetimeOffset, 'after:starts_at', new BookingDuration($request->input('starts_at'))],
         ]);
 
         // Accept exactly one strong, quoted version. Invalid/weak/wildcard tags

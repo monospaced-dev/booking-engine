@@ -155,6 +155,7 @@ paths:
         Rejects overlap with other bookings, but does not enforce blackouts.
         An existing Idempotency-Key for this resource returns the stored booking
         with 200 only when UTC-normalised starts_at, ends_at and retained metadata match.
+        Bookings may not exceed 366 elapsed days (422 validation_failed); this is a sanity limit, not a business rule.
         Datetimes compare at the existing stored second precision. Omitted metadata
         and empty {} or [] compare equally. Metadata key order is ignored; values compare strictly. A mismatch returns 422 idempotency_mismatch.
         Keys are scoped to the resource. PATCH leaves the stored key untouched;
@@ -265,6 +266,7 @@ paths:
       summary: Atomically reschedule a booking
       description: |
         Changes only starts_at and ends_at, at stored UTC-second precision.
+        Bookings may not exceed 366 elapsed days (422 validation_failed); this is a sanity limit, not a business rule.
         Requires one strong quoted lock_version via If-Match. Weak tags, wildcards,
         lists and malformed tags fail with 412. Missing If-Match returns 428.
         The version comparison and increment occur in the same UPDATE as the times.
