@@ -80,6 +80,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ResourceResult'}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
         default: {$ref: '#/components/responses/Error'}
   /resources/{resource}/bookings:
     parameters:
@@ -207,7 +208,7 @@ paths:
       - name: booking
         in: path
         required: true
-        description: Path IDs must match [0-9]{1,18}; invalid IDs return 404 route_not_found.
+        description: Path IDs must match [1-9][0-9]{0,17}; invalid IDs return 404 route_not_found.
         schema: {type: integer, minimum: 1, maximum: 999999999999999999}
     get:
       operationId: getBooking

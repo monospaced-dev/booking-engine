@@ -46,7 +46,7 @@ Severity is relative to this service's one job: returning a *wrong or missing* b
 - **Fix:** convert `from`/`to` to the resource's timezone *before* taking the date, and widen by ±1 day (`Interval` clips anyway). This goes away entirely if blackouts become instant ranges (§3, F3).
 
 ### B3. Naive datetimes mean different things on different endpoints — **verified**
-**Status:** Fixed 2026-10-10 on `fix/phase-2-busy-correctness`, commit `ad66e30`.
+**Status:** Fixed 2026-10-10 on `fix/phase-2-busy-correctness`, commit `ad66e30`. Superseded by Phase 7: blackout instant ranges use the shared database overlap predicate; no local-date filtering or resource-timezone conversion remains. Chicago and Tokyo boundary regressions still prove the same UTC instants.
 - `BookingController.php:77-78` parses with `Carbon::parse($v)`, so a naive string is read in the app timezone (UTC).
 - `BusyRangesController.php:19-20` reads a naive string in the *resource* timezone.
 - A client sending `2026-07-22T09:00:00` to POST (stored as 09:00Z) and then querying busy with naive times (read as Chicago) disagrees by 5 hours. Today that stays latent only if the client always sends explicit offsets.
@@ -86,7 +86,7 @@ Severity is relative to this service's one job: returning a *wrong or missing* b
 - **Dependency from B5:** the idempotency replay check compares metadata with `$existing->metadata !== $metadata` (`BookingController::replay()`), which is order-sensitive in PHP. That is safe only while `appointment_id` is the sole retained key. If this item allows more metadata keys, make the comparison order-insensitive first (for example, recursively `ksort` both sides before comparing), or a legitimate retry with reordered keys will get a false 422 `idempotency_mismatch`. Add a regression test with the same keys in a different order.
 
 ### B9. Out-of-range IDs return 500 — **verified**
-**Status:** Fixed in Phase 6 on `fix/phase-6-hardening`: all resource, booking and blackoutDate path parameters match `[0-9]{1,18}`; invalid IDs return 404 `route_not_found` before database binding. Valid but absent IDs still return `not_found`.
+**Status:** Fixed in Phase 6; completed by Phase 7 on `feat/phase-7-blackout-ranges`: all resource, booking and blackout path IDs match `[1-9][0-9]{0,17}`. Zero, leading zeros and other invalid IDs return 404 `route_not_found` before binding; valid absent IDs return `not_found`. OpenAPI paths are integers with minimum 1 and maximum 999999999999999999, accepted by the request validator.
 - `GET /api/resources/99999999999999999999/busy` gives `SQLSTATE[22003] … out of range for type bigint`, status 500, not 404. This applies to every route with `{resource}`, `{booking}` or `{blackoutDate}`.
 - `bootstrap/app.php:25-27` only maps `NotFoundHttpException`.
 - Low likelihood (the consumer sends real IDs) but trivial to fix with a route pattern (`[0-9]{1,18}`).
@@ -108,7 +108,7 @@ Severity is relative to this service's one job: returning a *wrong or missing* b
 None are wrong in isolation. Together they are what a consumer's HTTP mocks drift from.
 
 ### B11. `POST /resources` silently ignores a different timezone — **verified**
-**Status:** Fixed in Phase 6 on `fix/phase-6-hardening`: POST returns 409 `timezone_mismatch` for different timezones and retains the row unchanged. Matching timezones still return 200. Two-process tests observe actual 23505 races and prove both outcomes after firstOrCreate re-selects the winner. PUT behavior is unchanged; its blackout-shifting hazard awaits blackout-range work.
+**Status:** Superseded by Phase 7 on `feat/phase-7-blackout-ranges`: resource timezone and PUT resource are removed. POST finds or creates by external identity alone (201/200), retaining two-process unique-race recovery. Blackouts store fixed instants, so no timezone-change hazard or `timezone_mismatch` 409 remains.
 - `ResourceController.php:21-29` uses `firstOrCreate` with `timezone` only in the "create" attributes. Posting an existing resource with a *different* timezone returns 200 with the *old* value and `created:false`.
 - `PUT /resources/{id}` (`:43-57`) does change it. That silently shifts every existing blackout's UTC meaning, because blackouts are stored as local wall-clock time (**unverified**, from the code), while bookings are absolute instants and don't move.
 - Also: `firstOrCreate` can race on `unique(external_type, external_id)` and surface as a 500 (**unverified**, standard check-then-insert race).
@@ -166,11 +166,13 @@ Legend: **Fits oracle?** = stays a pure busy-time store/merge, with no availabil
 - **What could go wrong:** it is a new raw SQL statement, so it needs its own test against real Postgres, which is the failure class you've already had. Lost updates between two PATCHes need `If-Match` or a version column. Do **not** support moving across resources in v1, because that needs locking two resources. Idempotency semantics need defining.
 
 ### F3. Blackouts as a single range row; recurring blackouts
+**Status (first half, ranked #7):** Implemented in Phase 7 on `feat/phase-7-blackout-ranges`. Finite, nonempty `blackouts.during` ranges have a composite GiST index and allow overlaps; GET/POST/DELETE use explicit-offset instants and UTC objects. Busy uses the same range helper and overlap scope as bookings, merges both sources, and keeps its response shape. SQL backfill runs before dropping `blackout_dates` and `resources.timezone`; tests prove normal, Tokyo and Chicago 23/25-hour DST days. Legacy routes/model/factory and PUT resource are removed outright. The only consumer is offline, so breaking contracts and migrations incompatible with the previous application are intentional. Down restores structure only. The full suite passes on PostgreSQL 17.11 (258 tests, 1,105 assertions). The recurrence half remains out of scope. The notes below are updated to reflect these decisions.
+
 - **Single range row — fits, and recommended.**
   - **Schema:** `blackouts(id, resource_id, during tstzrange, note)` with a GiST index on `(resource_id, during)`, and the same CHECK as above. Backfill from existing rows in SQL: `(date + start_time) AT TIME ZONE resources.timezone`.
   - **What it fixes:** it deletes B2 outright, removes the resource-timezone-change hazard (B11), allows overnight and multi-day blackouts, and makes the busy query one overlap predicate.
   - **Cost:** the consumer now computes local midnight and DST itself and sends instants. That is arguably the right owner, since it knows the business meaning of "closed Dec 25".
-  - **Compatibility:** keep accepting the old `date/start_time/end_time` shape on write for a deprecation window. Convert once, at write time, using the timezone at that moment.
+  - **Compatibility:** no deprecation window. The offline consumer must switch to `starts_at`/`ends_at` instants and calculate local/DST boundaries itself before returning online. Resource timezone is removed.
 - **Recurring blackouts — this breaks the oracle constraint.**
   - "Every Monday 12–13" is an availability rule. Storing an RRULE and expanding it at read time puts a rule engine and its DST/exception semantics inside the oracle.
   - **Alternative that keeps the model:** the consumer expands recurrences into concrete range rows over a horizon (say 12 months) via a bulk endpoint, and the engine remains rule-free.
@@ -230,6 +232,8 @@ Legend: **Fits oracle?** = stays a pure busy-time store/merge, with no availabil
 ---
 
 ## 4. Ranked improvements and features
+
+**Status (#7):** Implemented in Phase 7, including resource timezone removal and the Phase 6 ID carry-over fix. See F3, B2, B9 and B11. Bookings remain allowed to overlap blackouts; recurrence, bulk endpoints, external calendars and B13 remain outside scope.
 
 **Status (#12):** Implemented in Phase 6 on `fix/phase-6-hardening`: B8, B9, B11, a validated finite/nonempty `bookings.during` CHECK, and the 366-day POST/PATCH sanity limit. Migration validates legacy rows without rewriting them and remains compatible with the previous finite-range writer. Unused exception and `/api/user` removed; ExampleTest files were already absent from main. B13, blackouts, endpoints, soft-cancel, rate limiting and metrics remain outside scope.
 

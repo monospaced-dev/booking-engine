@@ -23,9 +23,9 @@ business hours or anything else domain-specific stays in the caller.
   `Idempotency-Key` header, backed by a partial unique index on
   `(resource_id, idempotency_key)`. A retry returns the original booking with
   `200`, including when two identical requests race each other.
-- **Busy-time oracle.** `GET .../busy` merges bookings and blackout dates into
-  one sorted list of non-overlapping ranges, resolved in the resource's own
-  timezone (so full-day blackouts mean the resource's midnight, not UTC's).
+- **Busy-time oracle.** `GET .../busy` merges booking and blackout instant ranges
+  into one sorted list of non-overlapping ranges in UTC. Consumers calculate
+  local-day and DST boundaries and send explicit offsets; resources have no timezone.
 - **API-key auth, stored hashed.** Keys are 64-char random strings; only their
   SHA-256 hash is stored. Keys can be deactivated and reactivated without
   deleting them.
@@ -41,15 +41,14 @@ All routes are under `/api`. Everything except `health` and `ping` requires an
 | --- | --- | --- |
 | `GET` | `/health` | DB connectivity check (no auth) |
 | `GET` | `/ping` | Liveness, `204` (no auth) |
-| `POST` | `/resources` | Register a resource (`external_type`, `external_id`, `timezone`); idempotent on the external pair |
-| `PUT` | `/resources/{resource}` | Change a resource's `timezone` |
+| `POST` | `/resources` | Register a resource (`external_type`, `external_id`); idempotent on the external pair |
 | `GET` | `/resources/{resource}/busy?from=&to=` | Merged busy ranges in a window |
 | `GET` | `/resources/{resource}/bookings?from=&to=` | List bookings, optionally in a window |
 | `POST` | `/resources/{resource}/bookings` | Create a booking (`starts_at`, `ends_at`, optional `metadata`); `409` on overlap |
 | `DELETE` | `/resources/{resource}/bookings/{booking}` | Cancel a booking |
-| `GET` | `/resources/{resource}/blackout-dates` | List blackout dates |
-| `POST` | `/resources/{resource}/blackout-dates` | Add a blackout (`date`, optional `start_time`/`end_time` as `H:i`, optional `note`); no times = full day |
-| `DELETE` | `/resources/{resource}/blackout-dates/{blackoutDate}` | Remove a blackout |
+| `GET` | `/resources/{resource}/blackouts` | List blackouts, optionally filtered by paired `from`/`to` instants |
+| `POST` | `/resources/{resource}/blackouts` | Add a blackout (`starts_at`, `ends_at` with explicit offsets, optional `note` up to 255 characters); at most 366 days |
+| `DELETE` | `/resources/{resource}/blackouts/{blackout}` | Remove a blackout |
 
 Example:
 

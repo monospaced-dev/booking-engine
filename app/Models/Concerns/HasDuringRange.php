@@ -18,7 +18,7 @@ trait HasDuringRange
      * Parse the during tstzrange column into starts_at and ends_at Carbon instances.
      * example: ["2026-07-14 09:00:00+00","2026-07-14 10:00:00+00")
      *
-     * @param  string  $rawDuring  Raw date/time of start and end in Google's format.
+     * @param  string  $rawDuring  Raw PostgreSQL range bounds.
      */
     public function parseDuring(string $rawDuring): array
     {

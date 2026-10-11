@@ -7,9 +7,7 @@ use Illuminate\Support\Facades\Schema;
 
 it('backfills local blackout dates into exact instants including both Chicago DST transitions', function () {
     foreach (['2026_10_11_210000_remove_resource_timezone.php', '2026_10_11_200000_drop_blackout_dates.php'] as $file) {
-        if (file_exists(database_path('migrations/'.$file))) {
-            (require database_path('migrations/'.$file))->down();
-        }
+        (require database_path('migrations/'.$file))->down();
     }
     Schema::dropIfExists('blackouts');
     $cases = [
@@ -26,6 +24,11 @@ it('backfills local blackout dates into exact instants including both Chicago DS
     }
     (require database_path('migrations/2026_10_11_190000_create_blackouts.php'))->up();
     $rows = DB::select('SELECT *, lower(during) AS start, upper(during) AS finish FROM blackouts ORDER BY id');
+    (require database_path('migrations/2026_10_11_200000_drop_blackout_dates.php'))->up();
+    (require database_path('migrations/2026_10_11_210000_remove_resource_timezone.php'))->up();
+    expect(Schema::hasTable('blackout_dates'))->toBeFalse();
+    expect(Schema::hasColumn('resources', 'timezone'))->toBeFalse();
+    expect(DB::select('SELECT *, lower(during) AS start, upper(during) AS finish FROM blackouts ORDER BY id'))->toEqual($rows);
     expect($rows)->toHaveCount(5);
     foreach ($rows as $i => $row) {
         expect(Carbon::parse($row->start)->utc()->toIso8601String())->toBe($cases[$i][4]);

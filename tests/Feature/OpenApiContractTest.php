@@ -195,3 +195,13 @@ it('validates the PATCH If-Match request contract', function (?string $tag) {
         expect(fn () => $validator->validate($request))->toThrow(ValidationFailed::class);
     }
 })->with(['"1"', null, '1', 'W/"1"', '*']);
+
+it('validates integer path IDs with their documented bounds', function (string $id, bool $valid) {
+    $validator = (new ValidatorBuilder)->fromYamlFile(base_path('docs/openapi.yaml'))->getRequestValidator();
+    $request = new Request('DELETE', "/api/resources/{$id}/blackouts/{$id}", ['X-API-Key' => 'spec-key']);
+    if ($valid) {
+        expect($validator->validate($request)->method())->toBe('delete');
+    } else {
+        expect(fn () => $validator->validate($request))->toThrow(ValidationFailed::class);
+    }
+})->with([['1', true], ['999999999999999999', true], ['0', false], ['1000000000000000000', false], ['-1', false], ['abc', false]]);

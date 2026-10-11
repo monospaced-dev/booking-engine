@@ -150,3 +150,65 @@ ExampleTest files were already absent from main.
 
 Validation: **231 tests passed, 998 assertions** on PostgreSQL **17.11**, with
 `--fail-on-risky`. OpenAPI real-response validation, Pint and diff checks pass.
+
+
+## Phase 7: blackout ranges and resource timezone removal
+
+Implemented on `feat/phase-7-blackout-ranges` (ranked #7, first half of F3,
+B11 supersession, and the Phase 6 route-ID carry-over fix). Contract source:
+[openapi.yaml](openapi.yaml).
+
+The only consumer is offline until further notice. Breaking contract changes
+are intentional, and migrations do not need to remain compatible with the
+previous application version. Update the consumer before bringing it online.
+
+| Endpoint | Before | After |
+|---|---|---|
+| All ID paths | `[0-9]{1,18}` allowed zero and leading zeros; OpenAPI IDs were strings | `[1-9][0-9]{0,17}`; invalid IDs return 404 `route_not_found`. OpenAPI integer paths: minimum 1, maximum 999999999999999999. Valid absent IDs return 404 `not_found`. |
+| GET/POST/DELETE `/api/resources/{resource}/blackout-dates[/{blackoutDate}]` | Resource-local date/time rows | Removed entirely; 404 `route_not_found`. No compatibility period. |
+| POST `/api/resources/{resource}/blackouts` | No endpoint | Required starts_at/ends_at with explicit offsets, end after start, at most 366 elapsed days; optional nullable string note, max 255. 201 full stored object. Overnight, multi-day and overlapping ranges allowed. |
+| GET `/api/resources/{resource}/blackouts` | No endpoint | All resource rows, or half-open overlap with paired optional from/to bounds using booking-list validation. Full unclipped objects; no ordering guarantee. Empty list is `[]`. |
+| DELETE `/api/resources/{resource}/blackouts/{blackout}` | No endpoint | 204; missing row or wrong parent returns 404 `not_found`. |
+| GET `/api/resources/{resource}/busy` | Converts local blackout dates/times using resource timezone | Reads booking/blackout ranges using the shared overlap scope, merges and clips them. Response shape and UTC format unchanged. |
+| POST `/api/resources` | Required/returned timezone; differing timezone produced 409 `timezone_mismatch` | Accepts external_type/external_id only; 201 on creation, 200 on existing identity, including concurrent creation races. Returns id, external_type, external_id, created. Timezone input is ignored like other unknown fields. |
+| PUT `/api/resources/{resource}` | Updates resource timezone | Removed; 404 `route_not_found`. |
+| POST/PATCH bookings | Does not enforce blackouts | Unchanged: bookings may still overlap blackouts. |
+
+Blackout objects contain exactly `id`, `resource_id`, `starts_at`, `ends_at`,
+`note`, `created_at`, `updated_at`. All timestamps use standard UTC seconds with
+`+00:00`. Blackouts have no PATCH, idempotency key, ETag or lock_version. Repeated
+POSTs create independent rows, even with an Idempotency-Key header.
+
+The consumer owns local-midnight and DST calculations. For a Chicago full-day
+blackout on 2026-03-08, send `2026-03-08T00:00:00-06:00` through
+`2026-03-09T00:00:00-05:00` (23 elapsed hours); on 2026-11-01, send
+`2026-11-01T00:00:00-05:00` through `2026-11-02T00:00:00-06:00` (25 hours).
+
+Migration order is create blackouts, SQL backfill using the old resource
+timezone, drop blackout_dates, then drop resources.timezone. Full-day boundaries
+are converted independently from local midnight to next local midnight; partial
+rows use their local times. If either legacy time is null, the row remains a
+full day, matching the previous busy behavior. Note and timestamps are retained;
+blackout IDs are newly assigned. The composite GiST index has no exclusion
+constraint; the finite/nonempty CHECK matches bookings. Rollbacks restore
+structure only and do not recover the original local-date data or timezones.
+Legacy notes over 255 characters fail the migration rather than being truncated.
+Stop the old application before migrating and deploy the new application after.
+
+No runtime resource-timezone use remains. Historical migrations, the backfill,
+structure rollback and legacy migration fixtures necessarily retain timezone
+references. Historical phase notes describe their original contracts; this
+section supersedes their timezone and blackout-date contracts. Recurring
+blackouts, bulk writes, external calendars and B13 are outside scope.
+
+Validation: regression tests failed before each behavior implementation.
+Migration tests assert exact Chicago/Tokyo partial-day instants, normal full-day
+instants, both Chicago DST days, preserved fields, and the final removal order.
+Database tests cover finite/nonempty ranges, overlaps, the GiST index and cascade
+delete. Busy tests preserve the Phase 2 boundary cases and cover merging,
+adjacency, clipping and isolation. Two-process creation coverage observes an
+actual blocked INSERT and SQLSTATE 23505 before re-selecting the resource.
+OpenAPI real-response and request validation accept integer ID paths.
+
+Full suite: **258 tests passed, 1,105 assertions** on PostgreSQL **17.11**,
+using `--fail-on-risky`. Pint and `git diff --check` pass.

@@ -12,7 +12,7 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     $this->resource = Resource::factory()->create();
-    $this->action = new GetBusyRanges();
+    $this->action = new GetBusyRanges;
 });
 
 /**
@@ -138,9 +138,7 @@ it('excludes blackout ranges outside the query window', function () {
         'during' => '[2026-07-22T01:00:00Z,2026-07-22T02:00:00Z)',
     ]);
 
-    // 'to' is midnight UTC on 2026-07-21 — the blackout's actual UTC window
-    // (2026-07-22T01:00-02:00, since 20:00 Chicago = 01:00 UTC next day) falls
-    // entirely after it, even though the date column itself is in range.
+    // The blackout starts after the query's exclusive end.
     $result = $this->action->handle(
         $this->resource,
         Carbon::parse('2026-07-20T00:00:00Z'),
