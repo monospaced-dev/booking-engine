@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\GetBusyRanges;
 use App\Models\Resource;
+use App\Rules\ExplicitDatetimeOffset;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 
@@ -12,12 +13,12 @@ class BusyRangesController extends Controller
     public function index(Request $request, Resource $resource, GetBusyRanges $getBusyRanges)
     {
         $validated = $request->validate([
-            'from' => 'required|date',
-            'to' => 'required|date|after:from',
+            'from' => ['required', 'date', new ExplicitDatetimeOffset()],
+            'to' => ['required', 'date', new ExplicitDatetimeOffset(), 'after:from'],
         ]);
 
-        $from = Carbon::parse($validated['from'], $resource->timezone);
-        $to = Carbon::parse($validated['to'], $resource->timezone);
+        $from = Carbon::parse($validated['from'])->utc();
+        $to = Carbon::parse($validated['to'])->utc();
 
         $windows = $getBusyRanges->handle($resource, $from, $to);
 

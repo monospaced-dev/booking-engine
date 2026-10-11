@@ -49,6 +49,7 @@ Severity is relative to this service's one job: returning a *wrong or missing* b
 - `BusyRangesController.php:19-20` reads a naive string in the *resource* timezone.
 - A client sending `2026-07-22T09:00:00` to POST (stored as 09:00Z) and then querying busy with naive times (read as Chicago) disagrees by 5 hours. Today that stays latent only if the client always sends explicit offsets.
 - **Fix:** require an explicit offset on every datetime input (validation rule or regex) and reject naive strings with a 422. This is a contract change, so check the client first.
+- Before bringing Inspector Service back up, confirm BookingEngineClient sends datetimes with an explicit offset; naive strings now return 422.
 
 ### B4. `/busy` returns mixed UTC offsets — **verified**
 - `Interval.php:14-17` returns `$exclusion['start']->max($window['start'])`, which hands back the *window's* Carbon instance when it wins. That instance keeps whatever timezone the request used.
