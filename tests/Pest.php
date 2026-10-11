@@ -2,6 +2,8 @@
 
 use App\Models\ApiKey;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
+use Tests\Support\OpenApi;
 use Tests\TestCase;
 
 /*
@@ -52,7 +54,7 @@ function something()
 
 function apiKeyHeader(): array
 {
-    $plainKey = 'test-plain-key-' . uniqid();
+    $plainKey = 'test-plain-key-'.uniqid();
 
     ApiKey::create([
         'name' => 'test-key',
@@ -62,3 +64,9 @@ function apiKeyHeader(): array
 
     return ['X-API-Key' => $plainKey];
 }
+
+TestResponse::macro('assertOpenApi', function (string $path, string $method) {
+    OpenApi::assertResponse($this, $path, $method);
+
+    return $this;
+});

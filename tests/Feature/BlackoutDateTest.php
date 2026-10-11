@@ -144,7 +144,7 @@ it('deletes a blackout date belonging to the resource', function () {
     $this->assertDatabaseMissing('blackout_dates', ['id' => $blackout->id]);
 });
 
-it('returns 403 when deleting a blackout date belonging to a different resource', function () {
+it('returns 404 when deleting a blackout date belonging to a different resource', function () {
     $resourceA = Resource::factory()->create();
     $resourceB = Resource::factory()->create();
     $headers = apiKeyHeader();
@@ -159,6 +159,6 @@ it('returns 403 when deleting a blackout date belonging to a different resource'
     $response = $this->withHeaders($headers)
         ->deleteJson("/api/resources/{$resourceB->id}/blackout-dates/{$blackout->id}");
 
-    $response->assertStatus(403);
+    $response->assertStatus(404)->assertJsonPath('code', 'not_found')->assertOpenApi('/resources/{resource}/blackout-dates/{blackoutDate}', 'delete');
     $this->assertDatabaseHas('blackout_dates', ['id' => $blackout->id]);
 });

@@ -11,7 +11,7 @@ it('deletes a booking when it belongs to the resource in the URL', function () {
     $resource = Resource::factory()->create();
     $headers = apiKeyHeader();
 
-    $booking = (new CreateBooking())->handle(
+    $booking = (new CreateBooking)->handle(
         resourceId: $resource->id,
         externalType: $resource->external_type,
         externalId: $resource->external_id,
@@ -27,12 +27,12 @@ it('deletes a booking when it belongs to the resource in the URL', function () {
     $this->assertDatabaseMissing('bookings', ['id' => $booking->id]);
 });
 
-it('returns 403 when deleting a booking through the wrong resource', function () {
+it('returns 404 when deleting a booking through the wrong resource', function () {
     $resourceA = Resource::factory()->create();
     $resourceB = Resource::factory()->create();
     $headers = apiKeyHeader();
 
-    $booking = (new CreateBooking())->handle(
+    $booking = (new CreateBooking)->handle(
         resourceId: $resourceA->id,
         externalType: $resourceA->external_type,
         externalId: $resourceA->external_id,
@@ -44,6 +44,6 @@ it('returns 403 when deleting a booking through the wrong resource', function ()
     $response = $this->withHeaders($headers)
         ->deleteJson("/api/resources/{$resourceB->id}/bookings/{$booking->id}");
 
-    $response->assertStatus(403);
+    $response->assertStatus(404)->assertJsonPath('code', 'not_found')->assertOpenApi('/resources/{resource}/bookings/{booking}', 'delete');
     $this->assertDatabaseHas('bookings', ['id' => $booking->id]);
 });

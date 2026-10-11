@@ -20,11 +20,11 @@ class ResourceController extends Controller
 
         $resource = Resource::firstOrCreate(
             [
-            'external_type' => $validated['external_type'],
-            'external_id' => $validated['external_id']
+                'external_type' => $validated['external_type'],
+                'external_id' => $validated['external_id'],
             ],
             [
-                'timezone' => $validated['timezone']
+                'timezone' => $validated['timezone'],
             ]
         );
 
@@ -33,8 +33,8 @@ class ResourceController extends Controller
             'external_type' => $resource->external_type,
             'external_id' => $resource->external_id,
             'timezone' => $resource->timezone,
-            'created' => $resource->wasRecentlyCreated
-        ]);
+            'created' => $resource->wasRecentlyCreated,
+        ], $resource->wasRecentlyCreated ? 201 : 200);
     }
 
     /**
@@ -52,7 +52,7 @@ class ResourceController extends Controller
             'id' => $resource->id,
             'external_type' => $resource->external_type,
             'external_id' => $resource->external_id,
-            'timezone' => $resource->timezone
+            'timezone' => $resource->timezone,
         ]);
     }
 }
