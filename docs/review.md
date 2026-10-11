@@ -67,6 +67,7 @@ Severity is relative to this service's one job: returning a *wrong or missing* b
 - **Fix:** store a request fingerprint (hash of start, end and metadata). On a mismatch return 422 or 409 with a distinct error code.
 
 ### B6. The 23505 "lost the race" branch is effectively dead — **verified**
+**Status:** Fixed 2026-10-10 on `fix/phase-4-idempotency`: keyed 23P01 failures re-select by resource/key through the same comparison used by pre-check and 23505 recovery. Matching rows replay with 200; different payloads return 422 `idempotency_mismatch`; no matching key preserves 409 `booking_conflict`. Two-process Postgres tests prove real blocked-insert races and both SQLSTATEs.
 - `BookingController.php:82-94` handles a unique violation on `(resource_id, idempotency_key)`. But a concurrent retry with the same key necessarily has the same range, and Postgres checks the exclusion index first.
 - I reproduced it with two psql sessions: the second insert fails with `23P01 bookings_no_overlap`, **not** 23505. `CreateBooking.php:51` turns that into a **409**.
 - So the case idempotency exists for (client times out, retries while the first request is still committing) returns a spurious conflict. No test can see this, because `RefreshDatabase` wraps each test in one transaction and nothing runs concurrently.
@@ -109,7 +110,7 @@ None are wrong in isolation. Together they are what a consumer's HTTP mocks drif
 - Also: `firstOrCreate` can race on `unique(external_type, external_id)` and surface as a 500 (**unverified**, standard check-then-insert race).
 
 ### B12. Test gaps for the failure modes you described
-**Status:** Phase 3 controller coverage added 2026-10-10 on `fix/phase-3-contract`: GET bookings executes the real Postgres overlap predicate, verifies resource isolation, half-open boundaries, offset bounds, full unclipped ranges, empty lists and invalid windows. ResourceController covers create/find statuses, timezone update, validation and missing resources. Spec tests validate all service operations. Full suite: 126 tests passed, 518 assertions on Postgres 17.11. The concurrency/savepoint coverage and overlap-helper refactor remain deferred; B5-B9, B11 and B13 are unchanged. The findings below describe the original gaps.
+**Status:** Phase 3 controller coverage added 2026-10-10 on `fix/phase-3-contract`: GET bookings executes the real Postgres overlap predicate, verifies resource isolation, half-open boundaries, offset bounds, full unclipped ranges, empty lists and invalid windows. ResourceController covers create/find statuses, timezone update, validation and missing resources. Spec tests validate all service operations. Full suite: 126 tests passed, 518 assertions on Postgres 17.11. Phase 4 adds real concurrency coverage for B5-B7; the overlap-helper refactor remains deferred. B8-B9, B11 and B13 are unchanged. The findings below describe the original gaps.
 - **Raw SQL with no test execution:** `BookingController.php:23` (`whereRaw('during && ?::tstzrange', …)` in `index`). There is no test for `GET …/bookings` at all. I ran it manually and it works today, but a future edit to the binding wouldn't fail any test. `CreateBooking.php:35-47` and `GetBusyRanges.php:24` *are* executed on real Postgres by existing tests.
 - **Untested controllers:** `ResourceController` (store and update) has zero tests. The 23505 branch and the savepoint comment at `CreateBooking.php:32-33` can't be exercised under `RefreshDatabase`.
 - **Passes, but fails in prod:** B2, B3 and B4 all pass today because every datetime in the suite is UTC with a `Z`, and `IntervalTest` uses same-timezone Carbons.
@@ -232,7 +233,7 @@ Value = benefit to correctness and to the consumer. Effort: S (≤ 1 day), M (da
 | 1 | CI: run Pest against Postgres on PR and push; gate deploy on it (B1, B12) | High | S | Low | none |
 | 2 | Fix busy-query correctness: blackout date filter (B2), UTC-normalise output (B4), require explicit offsets (B3) | High | S | Low–Med (B3 is a contract change) | #1 to guard it; client behaviour check for B3 |
 | 3 | OpenAPI spec + response/error normalisation (B10) + spec-validated feature tests | High | M | Low if additive | #1; consumer coordination |
-| 4 | Idempotency hardening: key validation, payload fingerprint, 23P01 replay (B5-B7) | Med–High | S | Low | #1 |
+| 4 | Idempotency hardening: key validation, stored-row payload comparison, 23P01 replay (B5-B7) | Med–High | S | Low | #1 |
 | 5 | Atomic reschedule (F2) + single-booking GET | High | S–M | Low | #1, #3 (shape), overlap helper |
 | 6 | Single overlap helper + tests for `GET bookings` and `ResourceController` (B12) | Med | S | Low | #1 |
 | 7 | Blackouts as range rows (F3, first half) | High | M | Med (data migration, API compatibility) | #1, #2 |

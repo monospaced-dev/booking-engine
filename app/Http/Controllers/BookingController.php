@@ -99,6 +99,15 @@ class BookingController extends Controller
             }
             throw $e;
         } catch (BookingConflictException $e) {
+            // Postgres can check the exclusion constraint before the unique key.
+            // The failed INSERT transaction has rolled back; re-read the winner.
+            if ($idempotencyKey !== null) {
+                $replay = $this->replay($resource, $idempotencyKey, $startsAt, $endsAt, $metadata);
+                if ($replay !== null) {
+                    return $replay;
+                }
+            }
+
             return response()->json(['error' => $e->getMessage(), 'message' => $e->getMessage(), 'code' => 'booking_conflict'], 409);
         }
 

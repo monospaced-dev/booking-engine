@@ -55,3 +55,20 @@ assertions too: schema validation alone does not check ownership, interval
 boundaries, persistence, or whether `created` matches the returned status.
 The metadata schema deliberately retains B8's empty-array/object behavior;
 `anyOf` also avoids the validator treating an empty array as both PHP shapes.
+
+
+## Idempotency races
+
+`tests/Integration/BookingIdempotencyRaceTest.php` uses `DatabaseMigrations`,
+not `RefreshDatabase`, so separate processes can see committed fixtures. It
+requires PHP `proc_open` and direct access to the same Postgres test database.
+The worker waits for `pg_blocking_pids` to confirm that the HTTP INSERT is
+blocked on its uncommitted booking before committing; a bounded timeout fails
+the test if this synchronization does not occur. The real 23P01 and 23505
+exceptions are observed and rethrown, with no mocked errors. Run these tests
+alone with the usual DB settings, or via the full suite (Integration follows
+Feature). Each case cleans up its worker and fixtures and resets migrations.
+
+```sh
+DB_PASSWORD=testing vendor/bin/pest tests/Integration/BookingIdempotencyRaceTest.php
+```

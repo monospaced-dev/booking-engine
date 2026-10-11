@@ -70,3 +70,5 @@ TestResponse::macro('assertOpenApi', function (string $path, string $method) {
 
     return $this;
 });
+
+pest()->extend(TestCase::class)->in('Integration');
