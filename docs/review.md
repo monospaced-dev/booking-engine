@@ -92,7 +92,7 @@ Severity is relative to this service's one job: returning a *wrong or missing* b
 - Low likelihood (the consumer sends real IDs) but trivial to fix with a route pattern (`[0-9]{1,18}`).
 
 ### B10. Inconsistent error and response shapes — **verified**
-**Status:** Fixed 2026-10-10 on `fix/phase-3-contract`. Hand-written `docs/openapi.yaml` and real-response feature validation cover the normalized contract. All API errors have `message` and `code`; conflict `error` remains. Ownership mismatches return 404; unknown routes use `route_not_found`, missing records use `not_found`. Booking and blackout response timestamps use UTC seconds with `+00:00`. POST bookings/blackouts return complete stored objects matching GET. Resource creation returns 201; existing resources return 200. See `docs/phase-3-contract-changes.md` for the consumer migration table. The findings below describe the original behavior.
+**Status:** Fixed 2026-10-10 on `fix/phase-3-contract`. Hand-written `docs/openapi.yaml` and real-response feature validation cover the normalized contract. All API errors have `message` and `code`; conflict `error` remains. Ownership mismatches return 404; unknown routes use `route_not_found`, missing records use `not_found`. Booking and blackout response timestamps use UTC seconds with `+00:00`. POST bookings/blackouts return complete stored objects matching GET. Resource creation returns 201; existing resources return 200. See `docs/consumer-contract-changes.md` for the consumer migration table. The findings below describe the original behavior.
 
 | Concern | Where | Inconsistency |
 |---|---|---|
