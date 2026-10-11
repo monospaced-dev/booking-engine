@@ -3,7 +3,7 @@
 use App\Actions\CreateBooking;
 use App\Actions\GetBusyRanges;
 use App\Exceptions\BookingConflictException;
-use App\Models\BlackoutDate;
+use App\Models\Blackout;
 use App\Models\Resource;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -11,7 +11,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->resource = Resource::factory()->create(['timezone' => 'America/Chicago']);
+    $this->resource = Resource::factory()->create();
     $this->action = new GetBusyRanges();
 });
 
@@ -29,7 +29,7 @@ function createBooking(Resource $resource, string $startsAt, string $endsAt): vo
     );
 }
 
-it('returns no busy windows when there are no bookings or blackout dates', function () {
+it('returns no busy windows when there are no bookings or blackouts', function () {
     $result = $this->action->handle(
         $this->resource,
         Carbon::parse('2026-07-20T00:00:00Z'),
@@ -77,12 +77,10 @@ it('excludes a booking that starts entirely after the queried range', function (
     expect($result)->toBeEmpty();
 });
 
-it('converts a full-day blackout into the correct UTC window for a non-UTC resource timezone', function () {
-    BlackoutDate::factory()->create([
+it('returns the full-day Chicago blackout instants', function () {
+    Blackout::factory()->create([
         'resource_id' => $this->resource->id,
-        'date' => '2026-07-21',
-        'start_time' => null,
-        'end_time' => null,
+        'during' => '[2026-07-21T05:00:00Z,2026-07-22T05:00:00Z)',
     ]);
 
     $result = $this->action->handle(
@@ -97,12 +95,10 @@ it('converts a full-day blackout into the correct UTC window for a non-UTC resou
         ->and($result[0]['end']->toIso8601String())->toBe('2026-07-22T05:00:00+00:00');
 });
 
-it('converts a partial-day blackout into the correct UTC window for a non-UTC resource timezone', function () {
-    BlackoutDate::factory()->create([
+it('returns the partial-day Chicago blackout instants', function () {
+    Blackout::factory()->create([
         'resource_id' => $this->resource->id,
-        'date' => '2026-07-21',
-        'start_time' => '12:00',
-        'end_time' => '13:00',
+        'during' => '[2026-07-21T17:00:00Z,2026-07-21T18:00:00Z)',
     ]);
 
     $result = $this->action->handle(
@@ -116,15 +112,13 @@ it('converts a partial-day blackout into the correct UTC window for a non-UTC re
         ->and($result[0]['end']->toIso8601String())->toBe('2026-07-21T18:00:00+00:00');
 });
 
-it('merges an overlapping booking and blackout date into a single busy window', function () {
+it('merges an overlapping booking and blackout into a single busy window', function () {
     createBooking($this->resource, '2026-07-21T16:00:00Z', '2026-07-21T17:30:00Z');
 
     // 12:00-13:00 Chicago = 17:00-18:00 UTC, overlapping the tail of the booking above
-    BlackoutDate::factory()->create([
+    Blackout::factory()->create([
         'resource_id' => $this->resource->id,
-        'date' => '2026-07-21',
-        'start_time' => '12:00',
-        'end_time' => '13:00',
+        'during' => '[2026-07-21T17:00:00Z,2026-07-21T18:00:00Z)',
     ]);
 
     $result = $this->action->handle(
@@ -138,18 +132,10 @@ it('merges an overlapping booking and blackout date into a single busy window', 
         ->and($result[0]['end']->toIso8601String())->toBe('2026-07-21T18:00:00+00:00');
 });
 
-it('clips out a blackout date whose row matches the coarse date filter but whose actual time falls outside the queried window', function () {
-    // The DB query filters blackout dates by date column alone (whereBetween on
-    // $from->toDateString()/$to->toDateString()), which is coarser than the real
-    // instant range. A blackout dated on the boundary day but timed well outside
-    // the query window should still be excluded from the final result — that
-    // protection comes entirely from Interval::mergeExclusions's clipping, not
-    // from the DB query itself.
-    BlackoutDate::factory()->create([
+it('excludes blackout ranges outside the query window', function () {
+    Blackout::factory()->create([
         'resource_id' => $this->resource->id,
-        'date' => '2026-07-21',
-        'start_time' => '20:00',
-        'end_time' => '21:00',
+        'during' => '[2026-07-22T01:00:00Z,2026-07-22T02:00:00Z)',
     ]);
 
     // 'to' is midnight UTC on 2026-07-21 — the blackout's actual UTC window
@@ -197,4 +183,14 @@ it('returns 422 from the HTTP endpoint when from or to is missing', function () 
     $this->withHeaders(apiKeyHeader())
         ->getJson("/api/resources/{$this->resource->id}/busy?from=2026-07-20T00:00:00Z")
         ->assertStatus(422);
+});
+
+it('merges overlapping and adjacent blackouts clips bounds and isolates resources', function () {
+    foreach (['[2026-07-21T10:00:00Z,2026-07-21T12:00:00Z)', '[2026-07-21T11:00:00Z,2026-07-21T13:00:00Z)', '[2026-07-21T13:00:00Z,2026-07-21T15:00:00Z)'] as $during) {
+        Blackout::factory()->create(['resource_id' => $this->resource->id, 'during' => $during]);
+    }
+    Blackout::factory()->create(['during' => '[2026-07-21T16:00:00Z,2026-07-21T17:00:00Z)']);
+    $this->withHeaders(apiKeyHeader())->getJson("/api/resources/{$this->resource->id}/busy?from=2026-07-21T11:00:00Z&to=2026-07-21T14:00:00Z")
+        ->assertExactJson([['starts_at' => '2026-07-21T11:00:00+00:00', 'ends_at' => '2026-07-21T14:00:00+00:00']]);
+    $this->getJson("/api/resources/{$this->resource->id}/busy?from=2026-07-21T15:00:00Z&to=2026-07-21T16:00:00Z")->assertExactJson([]);
 });
