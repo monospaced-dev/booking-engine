@@ -34,8 +34,10 @@ class AuthenticateApiKey
 
         $request->attributes->set('api_key_id', $storedKey->id);
 
-        $storedKey->last_used_at = now();
-        $storedKey->save();
+        $now = now();
+        ApiKey::whereKey($storedKey->id)
+            ->where(fn ($query) => $query->whereNull('last_used_at')->orWhere('last_used_at', '<', $now->copy()->subSeconds(60)))
+            ->update(['last_used_at' => $now]);
 
         return $next($request);
     }
