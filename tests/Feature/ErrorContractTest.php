@@ -36,3 +36,10 @@ it('adds an envelope to the unhealthy database response preserving probe fields'
     $this->getJson('/api/health')->assertStatus(503)->assertJsonPath('code', 'database_unavailable')
         ->assertJsonPath('database', 'unreachable')->assertJsonPath('status', 'error')->assertJsonStructure(['message']);
 });
+
+it('distinguishes unknown routes from missing records', function () {
+    $this->getJson('/api/does-not-exist')->assertNotFound()
+        ->assertJsonPath('code', 'route_not_found')->assertJsonPath('message', 'Route not found.');
+    $this->withHeaders(apiKeyHeader())->getJson('/api/resources/999999/bookings')->assertNotFound()
+        ->assertJsonPath('code', 'not_found')->assertJsonPath('message', 'Resource not found.');
+});

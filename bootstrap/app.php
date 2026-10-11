@@ -22,8 +22,17 @@ return Application::configure(basePath: dirname(__DIR__))
             fn (Request $request) => $request->is('api/*'),
         );
 
-        $exceptions->render(function (\Symfony\Component\HttpKernel\Exception\NotFoundHttpException $e) {
-            return response()->json(['message' => 'Resource not found.'], 404);
+        $exceptions->render(function (\Symfony\Component\HttpKernel\Exception\NotFoundHttpException $e, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            $missingRoute = $request->route() === null;
+
+            return response()->json([
+                'message' => $missingRoute ? 'Route not found.' : 'Resource not found.',
+                'code' => $missingRoute ? 'route_not_found' : 'not_found',
+            ], 404);
         });
         $exceptions->respond(function (\Symfony\Component\HttpFoundation\Response $response) {
             if (! request()->is('api/*') || $response->getStatusCode() < 400) {
