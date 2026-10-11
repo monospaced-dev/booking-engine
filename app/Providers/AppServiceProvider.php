@@ -21,9 +21,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->singleton(Adapter::class, fn () => $this->app->runningUnitTests()
-            ? new InMemory
-            : new APC);
+        $this->app->singleton(Adapter::class, fn () => match (config('metrics.storage')) {
+            'memory' => new InMemory,
+            'apcu' => extension_loaded('apcu') && apcu_enabled() ? new APC : new InMemory,
+            default => throw new \InvalidArgumentException('METRICS_STORAGE must be apcu or memory.'),
+        });
         $this->app->singleton(CollectorRegistry::class, fn ($app) => new CollectorRegistry($app->make(Adapter::class), false));
         if ($this->app->environment('local')) {
             $this->app->register(TelescopeServiceProvider::class);

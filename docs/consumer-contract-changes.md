@@ -235,6 +235,7 @@ New environment variables:
 | Variable | Default | Purpose |
 |---|---|---|
 | `API_RATE_LIMIT_PER_MINUTE` | `600` | Positive request budget per API key per minute, shared across authenticated routes. |
+| `METRICS_STORAGE` | `apcu` | Adapter: `apcu` or `memory`; APCu unavailable/disabled falls back to memory. Tests explicitly use memory. |
 | `METRICS_TOKEN` | Unset/empty | Independent scrape secret; leave empty to disable `/metrics` (404). |
 
 The application uses its configured cache store for throttling. The production
@@ -244,7 +245,9 @@ table and prefix. External production environment overrides are not visible in
 this checkout; `file`/`array` overrides make counts local instead.
 
 Metrics use `promphp/prometheus_client_php` 2.15.1 with APCu in production (extension
-added to the FPM image) and isolated in-memory storage in tests. The request counter
+added to the FPM image), selected through `METRICS_STORAGE` (default `apcu`).
+Tests explicitly select `memory`. Missing or disabled APCu falls back to memory;
+this fallback does not persist across separate FPM requests. The request counter
 `booking_engine_http_requests_total` and histogram
 `booking_engine_http_request_duration_seconds` have `method`, `route`, `status`
 labels. `route` is the URI template with its leading slash, or `unmatched`; raw
