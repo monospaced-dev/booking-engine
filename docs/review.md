@@ -82,6 +82,7 @@ Severity is relative to this service's one job: returning a *wrong or missing* b
 - `BookingController.php:54-55` declares `metadata` as an array with one validated child. Laravel's `validated()` returns only declared keys, so `metadata: {foo: "bar", appointment_id: 5}` is stored as `{"appointment_id":5}`.
 - An empty or absent `metadata` is stored and returned as `[]` (a JSON array), not `{}`. The response type of the field flips between array and object depending on content.
 - If the consumer ever sends anything beyond `appointment_id`, it is discarded without an error. Decide the policy: allow free-form with a size cap, or reject unknown keys with 422.
+- **Dependency from B5:** the idempotency replay check compares metadata with `$existing->metadata !== $metadata` (`BookingController::replay()`), which is order-sensitive in PHP. That is safe only while `appointment_id` is the sole retained key. If this item allows more metadata keys, make the comparison order-insensitive first (for example, recursively `ksort`
 
 ### B9. Out-of-range IDs return 500 — **verified**
 - `GET /api/resources/99999999999999999999/busy` gives `SQLSTATE[22003] … out of range for type bigint`, status 500, not 404. This applies to every route with `{resource}`, `{booking}` or `{blackoutDate}`.
