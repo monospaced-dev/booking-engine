@@ -2,7 +2,6 @@
 
 use App\Models\Booking;
 use App\Models\Resource;
-use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -103,3 +102,25 @@ it('allows multiple bookings with no idempotency key on the same resource at dif
 
     $this->assertDatabaseCount('bookings', 2);
 });
+
+it('rejects invalid idempotency headers before writing', function (string $key) {
+    $this->withHeaders($this->headers)->postJson("/api/resources/{$this->resource->id}/bookings", [
+        'starts_at' => '2026-08-03T14:00:00Z',
+        'ends_at' => '2026-08-03T15:00:00Z',
+    ], ['Idempotency-Key' => $key])
+        ->assertStatus(422)->assertJsonPath('code', 'validation_failed')
+        ->assertJsonValidationErrors('Idempotency-Key')
+        ->assertOpenApi('/resources/{resource}/bookings', 'post');
+
+    $this->assertDatabaseCount('bookings', 0);
+})->with(['empty' => '', '129 characters' => str_repeat('a', 129), 'oversized' => str_repeat('b', 300),
+    'space' => 'a b', 'punctuation' => 'key!', 'unicode' => 'café', 'newline' => "key\n"]);
+
+it('accepts boundary idempotency keys including zero', function (string $key) {
+    $payload = ['starts_at' => '2026-08-03T14:00:00Z', 'ends_at' => '2026-08-03T15:00:00Z'];
+    $first = $this->withHeaders($this->headers)->postJson("/api/resources/{$this->resource->id}/bookings", $payload, ['Idempotency-Key' => $key]);
+    $first->assertCreated()->assertJsonPath('idempotency_key', $key);
+    $this->withHeaders($this->headers)->postJson("/api/resources/{$this->resource->id}/bookings", $payload, ['Idempotency-Key' => $key])
+        ->assertOk()->assertExactJson($first->json());
+    $this->assertDatabaseCount('bookings', 1);
+})->with(['zero' => '0', 'one character' => '_', '128 characters' => str_repeat('Az0_-', 25).'ABC']);

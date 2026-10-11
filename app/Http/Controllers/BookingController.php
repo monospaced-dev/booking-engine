@@ -10,6 +10,7 @@ use App\Rules\ExplicitDatetimeOffset;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class BookingController extends Controller
 {
@@ -58,8 +59,13 @@ class BookingController extends Controller
         ]);
 
         $idempotencyKey = $request->header('Idempotency-Key');
+        if ($request->headers->has('Idempotency-Key')) {
+            Validator::make(['Idempotency-Key' => $idempotencyKey], [
+                'Idempotency-Key' => ['required', 'string', 'regex:/^[A-Za-z0-9_-]{1,128}$/D'],
+            ])->validate();
+        }
 
-        if ($idempotencyKey) {
+        if ($idempotencyKey !== null) {
             $existing = $resource->bookings()->where('idempotency_key', $idempotencyKey)->first();
 
             if ($existing) {
@@ -84,7 +90,7 @@ class BookingController extends Controller
         } catch (QueryException $e) {
             // SQLSTATE 23505 = unique_violation on (resource_id, idempotency_key) —
             // a concurrent request with the same key won the race.
-            if ($e->getCode() === '23505' && $idempotencyKey) {
+            if ($e->getCode() === '23505' && $idempotencyKey !== null) {
                 $existing = $resource->bookings()->where('idempotency_key', $idempotencyKey)->firstOrFail();
 
                 $parsed = $existing->parseDuring($existing->during);

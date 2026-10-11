@@ -72,6 +72,7 @@ Severity is relative to this service's one job: returning a *wrong or missing* b
 - **Fix:** on `23P01`, if an idempotency key was supplied, re-select by key and replay (200) when found. Only otherwise return 409.
 
 ### B7. Oversized idempotency key → 500 — **verified**
+**Status:** Fixed 2026-10-10 on `fix/phase-4-idempotency`: supplied keys must match `^[A-Za-z0-9_-]{1,128}$`; invalid keys return 422 `validation_failed`. Empty and trailing-newline keys are rejected; `0` is a valid key.
 - `BookingController.php:58` reads the header with no validation. A 300-character key hits `varchar(255)` and returns 500 (`SQLSTATE[22001]`).
 - **Fix:** validate length and charset (for example `^[A-Za-z0-9_-]{1,128}$`) and return 422.
 

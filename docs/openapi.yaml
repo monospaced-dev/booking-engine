@@ -143,12 +143,14 @@ paths:
         Rejects overlap with other bookings, but does not enforce blackouts.
         An existing Idempotency-Key for this resource returns the stored booking
         with 200, without comparing payloads. Keys are scoped to the resource.
-        Concurrent replay and oversized-key hardening are not implemented.
+        Concurrent replay hardening is not implemented.
+        Supplied keys must contain 1–128 ASCII letters, digits, underscores or hyphens.
+        Invalid keys return 422 with validation_failed.
       parameters:
         - name: Idempotency-Key
           in: header
           required: false
-          schema: {type: string}
+          schema: {type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_-]{1,128}$'}
       requestBody:
         required: true
         content:
