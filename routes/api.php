@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\BlackoutController;
-use App\Http\Controllers\BlackoutDateController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\BusyRangesController;
 use App\Http\Controllers\ResourceController;
@@ -26,7 +25,6 @@ Route::get('/ping', fn () => response()->noContent());
 Route::pattern('resource', '[1-9][0-9]{0,17}');
 Route::pattern('blackout', '[1-9][0-9]{0,17}');
 Route::pattern('booking', '[1-9][0-9]{0,17}');
-Route::pattern('blackoutDate', '[1-9][0-9]{0,17}');
 
 Route::middleware('auth.apikey')->group(function () {
     Route::post('/resources/{resource}/bookings', [BookingController::class, 'store']);
@@ -43,7 +41,4 @@ Route::middleware('auth.apikey')->group(function () {
     Route::post('/resources/{resource}/blackouts', [BlackoutController::class, 'store']);
     Route::delete('/resources/{resource}/blackouts/{blackout}', [BlackoutController::class, 'destroy']);
 
-    Route::post('/resources/{resource}/blackout-dates', [BlackoutDateController::class, 'store']);
-    Route::get('/resources/{resource}/blackout-dates', [BlackoutDateController::class, 'index']);
-    Route::delete('/resources/{resource}/blackout-dates/{blackoutDate}', [BlackoutDateController::class, 'destroy']);
 });

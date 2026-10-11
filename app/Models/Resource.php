@@ -22,8 +22,4 @@ class Resource extends Model
         return $this->hasMany(Blackout::class);
     }
 
-    public function blackoutDates(): HasMany
-    {
-        return $this->hasMany(BlackoutDate::class);
-    }
 }
