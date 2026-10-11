@@ -44,8 +44,8 @@ it('accepts explicit offsets and rejects a naive datetime on every datetime inpu
             ]);
         } else {
             $response->assertStatus($isPost ? 201 : 200)
-                ->assertJsonPath($isPost ? 'starts_at' : '0.starts_at', '2026-07-21T15:00:00.000000Z')
-                ->assertJsonPath($isPost ? 'ends_at' : '0.ends_at', '2026-07-21T16:00:00.000000Z');
+                ->assertJsonPath($isPost ? 'starts_at' : '0.starts_at', '2026-07-21T15:00:00+00:00')
+                ->assertJsonPath($isPost ? 'ends_at' : '0.ends_at', '2026-07-21T16:00:00+00:00');
         }
     }
 })->with([
