@@ -35,6 +35,7 @@ Severity is relative to this service's one job: returning a *wrong or missing* b
 - **Which workflow is live is unclear.** The recent commits (Kyverno, GHCR signing) point at GitHub, which makes the Gitea file look like a leftover. Please confirm.
 
 ### B2. Blackouts can be silently omitted from `/busy` (false "free") — **verified**
+**Status:** Fixed 2026-10-10 on `fix/phase-2-busy-correctness`, commit `fa9afe0`.
 - `GetBusyRanges.php:29-31` filters blackouts with `whereBetween('date', [$from->toDateString(), $to->toDateString()])`.
 - `BusyRangesController.php:19-20` builds `$from`/`$to` with `Carbon::parse($v, $resource->timezone)`. That timezone argument is **ignored when the string carries an offset**, such as `Z`.
 - So for a UTC-offset window, `toDateString()` returns the *UTC* date, but blackout `date` is a *resource-local* date.
@@ -45,6 +46,7 @@ Severity is relative to this service's one job: returning a *wrong or missing* b
 - **Fix:** convert `from`/`to` to the resource's timezone *before* taking the date, and widen by ±1 day (`Interval` clips anyway). This goes away entirely if blackouts become instant ranges (§3, F3).
 
 ### B3. Naive datetimes mean different things on different endpoints — **verified**
+**Status:** Fixed 2026-10-10 on `fix/phase-2-busy-correctness`, commit `ad66e30`.
 - `BookingController.php:77-78` parses with `Carbon::parse($v)`, so a naive string is read in the app timezone (UTC).
 - `BusyRangesController.php:19-20` reads a naive string in the *resource* timezone.
 - A client sending `2026-07-22T09:00:00` to POST (stored as 09:00Z) and then querying busy with naive times (read as Chicago) disagrees by 5 hours. Today that stays latent only if the client always sends explicit offsets.
@@ -52,6 +54,7 @@ Severity is relative to this service's one job: returning a *wrong or missing* b
 - Before bringing Inspector Service back up, confirm BookingEngineClient sends datetimes with an explicit offset; naive strings now return 422.
 
 ### B4. `/busy` returns mixed UTC offsets — **verified**
+**Status:** Fixed 2026-10-10 on `fix/phase-2-busy-correctness`, commit `ff9cc46`.
 - `Interval.php:14-17` returns `$exclusion['start']->max($window['start'])`, which hands back the *window's* Carbon instance when it wins. That instance keeps whatever timezone the request used.
 - Naive `from=2026-07-21T10:30:00` on a Chicago resource gave `[{"starts_at":"2026-07-21T10:30:00-05:00","ends_at":"2026-07-21T16:00:00+00:00"}]`. That is two different offsets in one object.
 - Instants are still correct, but a consumer that string-compares or truncates gets wrong answers, and `GetBusyRangesTest.php:167-182` only checks the all-UTC case.
