@@ -1,6 +1,9 @@
 <?php
 
 use App\Actions\CreateBooking;
+use Illuminate\Support\Facades\Log;
+use Prometheus\CollectorRegistry;
+use Prometheus\Counter;
 use Prometheus\Storage\Adapter;
 use Prometheus\Storage\InMemory;
 
@@ -49,4 +52,34 @@ it('counts rendered internal errors with status 500', function () {
     ])->assertStatus(500);
     expect($this->get('/metrics', ['Authorization' => 'Bearer scrape-secret'])->getContent())
         ->toContain('route="/api/resources/{resource}/bookings",status="500"');
+});
+
+it('preserves successful API responses and warns when recording metrics throws', function (string $method, Throwable $failure) {
+    $resource = App\Models\Resource::factory()->create();
+    $this->withHeaders(apiKeyHeader());
+    Log::spy();
+    $registry = $this->mock(CollectorRegistry::class);
+    if ($method === 'getOrRegisterHistogram') {
+        $registry->shouldReceive('getOrRegisterCounter')->once()->andReturn(new Counter(
+            new InMemory, 'test', 'requests', 'Test counter.', ['method', 'route', 'status']
+        ));
+    }
+    $registry->shouldReceive($method)->once()->andThrow($failure);
+
+    $this->getJson("/api/resources/{$resource->id}/bookings")->assertOk()->assertExactJson([]);
+    Log::shouldHaveReceived('warning')->once()->with(
+        'Failed to record request metrics.', Mockery::on(fn (array $context) => $context['exception'] === $failure)
+    );
+})->with([
+    ['getOrRegisterCounter', new RuntimeException('counter storage failed')],
+    ['getOrRegisterCounter', new Error('counter failed')],
+    ['getOrRegisterHistogram', new RuntimeException('histogram storage failed')],
+]);
+
+it('preserves error responses when the registry cannot be resolved', function () {
+    $failure = new RuntimeException('registry unavailable');
+    $this->app->bind(CollectorRegistry::class, fn () => throw $failure);
+    Log::spy();
+    $this->postJson('/api/resources', [])->assertUnauthorized()->assertJsonPath('code', 'unauthorized');
+    Log::shouldHaveReceived('warning')->once();
 });

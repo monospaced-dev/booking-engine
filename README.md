@@ -157,12 +157,16 @@ The token comparison uses `hash_equals`. No Kubernetes manifests are changed.
   client's default buckets.
 
 Both use `method`, `route` and `status` labels. Routes include their URI template
-(e.g. `/api/resources/{resource}/busy`); unknown routes use `unmatched`. Final
-rendered errors are counted; `/metrics` requests are excluded regardless of status.
+(e.g. `/api/resources/{resource}/busy`); unknown routes use `unmatched`.
+Recording failures are caught and logged at warning level without changing the
+API response. Final rendered errors are counted; `/metrics` requests are excluded
+regardless of status.
 Latency runs from entry into global middleware through rendering the response,
 excluding network transmission. APCu storage in the FPM image shares metrics among
 workers in one pod; counters reset on restart or APCu eviction and are **not shared
-across pods**. Scrape every pod and aggregate in Prometheus. `METRICS_STORAGE` selects `apcu` (default) or `memory`. Tests explicitly select
+across pods**. Scrape every pod and aggregate in Prometheus.
+`METRICS_STORAGE` selects `apcu` (default) or `memory`. Tests explicitly select
 `memory`. If APCu is missing or disabled, `apcu` falls back to in-memory storage;
 in-memory metrics last only for the current application process/request and do
-not persist across separate FPM requests. `/metrics` is operational and excluded from the API OpenAPI spec.
+not persist across separate FPM requests. `/metrics` is operational and excluded
+from the API OpenAPI spec.

@@ -252,7 +252,8 @@ this fallback does not persist across separate FPM requests. The request counter
 `booking_engine_http_request_duration_seconds` have `method`, `route`, `status`
 labels. `route` is the URI template with its leading slash, or `unmatched`; raw
 paths/query strings never become labels. Final rendered failures are counted.
-Scrape requests themselves are excluded. APCu metrics are shared by FPM workers
+Recording failures (including registry construction) are caught and logged at
+warning level without changing the API response. Scrape requests themselves are excluded. APCu metrics are shared by FPM workers
 in one pod, reset on restart/eviction, and are not shared between pods.
 
 Scrape **HTTP port 8080, path `/metrics`** on each pod with
