@@ -94,7 +94,7 @@ class BookingController extends Controller
             }
             throw $e;
         } catch (BookingConflictException $e) {
-            return response()->json(['error' => $e->getMessage()], 409);
+            return response()->json(['error' => $e->getMessage(), 'message' => $e->getMessage(), 'code' => 'booking_conflict'], 409);
         }
 
         return response()->json($booking, 201);

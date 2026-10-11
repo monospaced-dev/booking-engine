@@ -19,7 +19,7 @@ Route::get('/health', function () {
     try {
         DB::connection()->getPdo();
     } catch (\Throwable $e) {
-        return response()->json(['status' => 'error', 'database' => 'unreachable'], 503);
+        return response()->json(['status' => 'error', 'database' => 'unreachable', 'message' => 'Database unavailable.', 'code' => 'database_unavailable'], 503);
     }
 
     return response()->json(['status' => 'ok']);

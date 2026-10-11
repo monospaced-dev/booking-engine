@@ -25,4 +25,26 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(function (\Symfony\Component\HttpKernel\Exception\NotFoundHttpException $e) {
             return response()->json(['message' => 'Resource not found.'], 404);
         });
+        $exceptions->respond(function (\Symfony\Component\HttpFoundation\Response $response) {
+            if (! request()->is('api/*') || $response->getStatusCode() < 400) {
+                return $response;
+            }
+
+            $status = $response->getStatusCode();
+            $payload = json_decode($response->getContent(), true) ?? [];
+            $payload['message'] ??= \Symfony\Component\HttpFoundation\Response::$statusTexts[$status] ?? 'Request failed.';
+            $payload['code'] ??= match ($status) {
+                401 => 'unauthorized',
+                403 => 'forbidden',
+                404 => 'not_found',
+                405 => 'method_not_allowed',
+                422 => 'validation_failed',
+                429 => 'too_many_requests',
+                default => $status >= 500 ? 'internal_error' : 'request_failed',
+            };
+
+            $response->setContent(json_encode($payload));
+
+            return $response;
+        });
     })->create();
