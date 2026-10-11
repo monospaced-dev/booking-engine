@@ -22,8 +22,8 @@ class BusyRangesController extends Controller
         $windows = $getBusyRanges->handle($resource, $from, $to);
 
         $formatted = collect($windows)->map(fn ($window) => [
-            'starts_at' => $window['start']->toIso8601String(),
-            'ends_at' => $window['end']->toIso8601String(),
+            'starts_at' => $window['start']->utc()->toIso8601String(),
+            'ends_at' => $window['end']->utc()->toIso8601String(),
         ]);
 
         return response()->json($formatted, 200);
