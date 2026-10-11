@@ -16,7 +16,7 @@ class Booking extends Model
 
     protected $fillable = ['resource_id', 'external_type', 'external_id', 'metadata', 'id', 'starts_at', 'ends_at', 'idempotency_key'];
 
-    protected $casts = ['metadata' => 'array', 'starts_at' => 'datetime', 'ends_at' => 'datetime'];
+    protected $casts = ['lock_version' => 'integer', 'metadata' => 'array', 'starts_at' => 'datetime', 'ends_at' => 'datetime'];
 
     protected $hidden = ['during'];
 

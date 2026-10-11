@@ -32,7 +32,7 @@ class CreateBooking
                 return DB::selectOne(
                     'INSERT INTO bookings (resource_id, external_type, external_id, during, metadata, idempotency_key, created_at, updated_at)
                  VALUES (?, ?, ?, ?::tstzrange, ?, ?, now(), now())
-                 RETURNING id, resource_id, external_type, external_id, during, metadata, idempotency_key, created_at, updated_at',
+                 RETURNING lock_version, id, resource_id, external_type, external_id, during, metadata, idempotency_key, created_at, updated_at',
                     [
                         $resourceId,
                         $externalType,

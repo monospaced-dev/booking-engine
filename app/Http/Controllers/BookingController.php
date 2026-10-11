@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\CreateBooking;
+use App\Actions\RescheduleBooking;
 use App\Exceptions\BookingConflictException;
 use App\Models\Booking;
 use App\Models\Resource;
@@ -105,7 +106,7 @@ class BookingController extends Controller
             return response()->json(['error' => $e->getMessage(), 'message' => $e->getMessage(), 'code' => 'booking_conflict'], 409);
         }
 
-        return response()->json($booking, 201);
+        return $this->bookingResponse($booking, 201);
     }
 
     private function replay(Resource $resource, string $key, Carbon $startsAt, Carbon $endsAt, array $metadata): ?JsonResponse
@@ -127,7 +128,66 @@ class BookingController extends Controller
         $existing->starts_at = $parsed['starts_at'];
         $existing->ends_at = $parsed['ends_at'];
 
-        return response()->json($existing, 200);
+        return $this->bookingResponse($existing);
+    }
+
+    private function bookingResponse(Booking $booking, int $status = 200): JsonResponse
+    {
+        $parsed = $booking->parseDuring($booking->during);
+        $booking->starts_at = $parsed['starts_at'];
+        $booking->ends_at = $parsed['ends_at'];
+
+        return response()->json($booking, $status)->header('ETag', '"'.$booking->lock_version.'"');
+    }
+
+    public function show(Resource $resource, Booking $booking): JsonResponse
+    {
+        abort_if($booking->resource_id !== $resource->id, 404);
+
+        return $this->bookingResponse($booking);
+    }
+
+    public function update(Request $request, Resource $resource, Booking $booking, RescheduleBooking $rescheduleBooking): JsonResponse
+    {
+        abort_if($booking->resource_id !== $resource->id, 404);
+        if (! $request->headers->has('If-Match')) {
+            return response()->json(['message' => 'If-Match is required.', 'code' => 'precondition_required'], 428);
+        }
+
+        $validated = $request->validate([
+            'starts_at' => ['required', 'date', new ExplicitDatetimeOffset],
+            'ends_at' => ['required', 'date', new ExplicitDatetimeOffset, 'after:starts_at'],
+        ]);
+
+        // Accept exactly one strong, quoted version. Invalid/weak/wildcard tags
+        // cannot match. Bound the integer before passing it to Postgres.
+        $tag = $request->header('If-Match');
+        if (! preg_match('/^"([1-9][0-9]{0,9})"$/D', $tag, $matches) || (int) $matches[1] > 2147483647) {
+            return $this->preconditionFailed();
+        }
+
+        try {
+            $updated = $rescheduleBooking->handle($resource->id, $booking->id, $matches[1],
+                Carbon::parse($validated['starts_at'])->utc()->startOfSecond(),
+                Carbon::parse($validated['ends_at'])->utc()->startOfSecond());
+        } catch (BookingConflictException $e) {
+            return response()->json(['error' => $e->getMessage(), 'message' => $e->getMessage(), 'code' => 'booking_conflict'], 409);
+        }
+
+        if ($updated === null) {
+            // Also handles deletion after route binding without turning it into
+            // a stale-version response for a booking that no longer exists.
+            abort_unless($resource->bookings()->whereKey($booking->id)->exists(), 404);
+
+            return $this->preconditionFailed();
+        }
+
+        return $this->bookingResponse($updated);
+    }
+
+    private function preconditionFailed(): JsonResponse
+    {
+        return response()->json(['message' => 'Booking version does not match If-Match.', 'code' => 'precondition_failed'], 412);
     }
 
     public function destroy(Resource $resource, Booking $booking)

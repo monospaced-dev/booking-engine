@@ -111,7 +111,7 @@ None are wrong in isolation. Together they are what a consumer's HTTP mocks drif
 - Also: `firstOrCreate` can race on `unique(external_type, external_id)` and surface as a 500 (**unverified**, standard check-then-insert race).
 
 ### B12. Test gaps for the failure modes you described
-**Status:** Phase 3 controller coverage added 2026-10-10 on `fix/phase-3-contract`: GET bookings executes the real Postgres overlap predicate, verifies resource isolation, half-open boundaries, offset bounds, full unclipped ranges, empty lists and invalid windows. ResourceController covers create/find statuses, timezone update, validation and missing resources. Spec tests validate all service operations. Full suite: 126 tests passed, 518 assertions on Postgres 17.11. Phase 4 adds real concurrency coverage for B5-B7; the overlap-helper refactor remains deferred. B8-B9, B11 and B13 are unchanged. The findings below describe the original gaps.
+**Status:** Phase 3 controller coverage added 2026-10-10 on `fix/phase-3-contract`: GET bookings executes the real Postgres overlap predicate, verifies resource isolation, half-open boundaries, offset bounds, full unclipped ranges, empty lists and invalid windows. ResourceController covers create/find statuses, timezone update, validation and missing resources. Spec tests validate all service operations. Full suite: 126 tests passed, 518 assertions on Postgres 17.11. Phase 4 adds real concurrency coverage for B5-B7; Phase 5 on `feat/phase-5-reschedule` centralizes the overlap predicate in `Booking::scopeOverlapping()` and half-open second-precision literals in `BookingRange::literal()`, used by create, busy and list. The refactor passed the full suite and was committed independently as `a2506c3`. B8-B9, B11 and B13 are unchanged. The findings below describe the original gaps.
 - **Raw SQL with no test execution:** `BookingController.php:23` (`whereRaw('during && ?::tstzrange', …)` in `index`). There is no test for `GET …/bookings` at all. I ran it manually and it works today, but a future edit to the binding wouldn't fail any test. `CreateBooking.php:35-47` and `GetBusyRanges.php:24` *are* executed on real Postgres by existing tests.
 - **Untested controllers:** `ResourceController` (store and update) has zero tests. The 23505 branch and the savepoint comment at `CreateBooking.php:32-33` can't be exercised under `RefreshDatabase`.
 - **Passes, but fails in prod:** B2, B3 and B4 all pass today because every datetime in the suite is UTC with a `Z`, and `IntervalTest` uses same-timezone Carbons.
@@ -155,6 +155,7 @@ Legend: **Fits oracle?** = stays a pure busy-time store/merge, with no availabil
 - **Open question:** does Inspector Service have a multi-step checkout that needs holds? If not, this is speculative.
 
 ### F2. Atomic reschedule (`PATCH /resources/{r}/bookings/{id}`)
+**Status:** Implemented 2026-10-10 on `feat/phase-5-reschedule`, including single-booking GET. Additive `lock_version integer NOT NULL DEFAULT 1` migration supports old-version inserts. Every booking object includes its version; POST (including replay), GET one and PATCH return the matching quoted ETag. PATCH requires one strong quoted If-Match: missing returns 428 `precondition_required`, stale returns 412 `precondition_failed`. A single parent-scoped UPDATE compares/increments the version and sets the range plus database-clock updated_at. Stale versions win over overlap; 23P01 returns 409 `booking_conflict` without changes. No-op successes increment the version. PATCH ignores Idempotency-Key and retains the stored key; an original POST retry after changed times returns 422 `idempotency_mismatch`. Real Postgres tests cover self-overlap, adjacency, rollback and two-process insert/PATCH races; spec tests cover both endpoints and headers. The bullets below describe the original proposal, superseded by these concurrency decisions.
 - **Fits:** yes.
 - **Schema:** none. A single `UPDATE bookings SET during = ?::tstzrange, updated_at = now() WHERE id = ? AND resource_id = ?`.
 - **Key property:** Postgres exclusion constraints on UPDATE do not conflict a row with its own old value, so moving a booking to an overlapping new range works. The consumer currently has to DELETE then POST, which can lose the slot to someone else between the two calls.
@@ -226,6 +227,8 @@ Legend: **Fits oracle?** = stays a pure busy-time store/merge, with no availabil
 ---
 
 ## 4. Ranked improvements and features
+
+**Status (#5 and overlap-helper half of #6):** Implemented in Phase 5 on `feat/phase-5-reschedule`. See F2 and B12 above. B8-B13 findings, holds, blackouts and soft-cancel remain outside Phase 5 scope; existing controller coverage from Phase 3 is retained.
 
 Value = benefit to correctness and to the consumer. Effort: S (≤ 1 day), M (days), L (a week or more). Risk = chance of breaking something that works.
 

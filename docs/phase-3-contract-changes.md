@@ -66,3 +66,44 @@ committed fixtures are cleaned up in `finally`; migrations reset each case.
 Validation: full suite passed on PostgreSQL 17.11 with `--fail-on-risky`: 149
 tests, 672 assertions. B7, B5 and B6 each had failing regression tests confirmed
 before implementation and are committed separately. Pint and diff checks pass.
+
+
+## Phase 5: atomic reschedule and booking versions
+
+Implemented on `feat/phase-5-reschedule`; contract source: [openapi.yaml](openapi.yaml).
+
+| Endpoint / header | Consumer contract |
+|---|---|
+| GET `/api/resources/{resource}/bookings/{booking}` | 200 full booking, same object shape as list; quoted `ETag` matches `lock_version`. Wrong parent or missing resource/booking: 404 `not_found`. |
+| PATCH `/api/resources/{resource}/bookings/{booking}` | Requires `starts_at` and `ends_at`, using POST validation: explicit offsets, end after start. Changes times only; resource and metadata input are ignored. Success: 200 full booking with incremented version and matching quoted `ETag`. |
+| Booking objects in POST, GET one, PATCH and list | Add integer `lock_version`, initially 1. POST creation and replay, GET one and PATCH include strong quoted `ETag`, e.g. `"1"`. List has versions on objects and no booking ETag header. |
+| PATCH `If-Match` | Send exactly one strong quoted version from the latest booking ETag, e.g. `"1"`. Missing: 428 `precondition_required`. Stale, malformed, weak, wildcard or list: 412 `precondition_failed`. |
+| PATCH overlap | 409 `booking_conflict`, same `error`/`message`/`code` envelope as POST. Previous times, updated_at and lock_version remain unchanged. Self-overlap and adjacent half-open ranges are allowed. |
+| PATCH concurrency | Version comparison, range update, database-clock updated_at and version increment happen in one UPDATE scoped by booking and resource. A stale version wins over an overlapping target (412). Two concurrent requests carrying the same version produce one 200 and one 412. Every success, even a no-op, increments the version. |
+| PATCH `Idempotency-Key` | Ignored, including invalid values. The stored key remains untouched. After changing times, retrying POST with the original key and original times intentionally returns 422 `idempotency_mismatch`. |
+
+On 412, GET the latest booking and make an explicit decision before sending a new
+PATCH with its current ETag. PATCH does not enforce blackouts or move a booking
+between resources. Wrong-parent and missing-row checks return 404 before PATCH
+validation/preconditions. With an existing booking, missing If-Match takes
+precedence over input validation; time validation runs before matching a supplied
+tag. Successful responses preserve all non-time fields except the incremented
+version and database-clock updated_at. All datetimes retain UTC-second precision.
+
+The migration only adds `lock_version integer NOT NULL DEFAULT 1`; it is safe to
+apply while the prior application version runs, including inserts that omit the
+column. Deploy the migration before the new application. The overlap refactor
+was committed independently with no behavior change (`a2506c3`); the full suite
+passed before endpoint work began. No holds, blackout changes, soft-cancel, or
+B8-B13 fixes are included.
+
+Validation: endpoint regression tests failed before implementation. The existing
+two-process worker now also drives an actual HTTP PATCH, holds its transaction,
+and commits only after `pg_blocking_pids` proves the competing request is blocked.
+Coverage proves conflict rollback, self-overlap, adjacency, no-op increments,
+precondition precedence, retained keys/metadata and database-clock timestamps.
+OpenAPI validation covers real endpoint responses, ETags, new error envelopes,
+and the required If-Match request header, with negative mutation checks.
+
+Full suite: **186 tests passed, 849 assertions** on PostgreSQL **17.11**, using
+`--fail-on-risky`. Pint and `git diff --check` pass.

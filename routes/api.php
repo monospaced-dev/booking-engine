@@ -30,6 +30,8 @@ Route::get('/ping', fn () => response()->noContent());
 Route::middleware('auth.apikey')->group(function () {
     Route::post('/resources/{resource}/bookings', [BookingController::class, 'store']);
     Route::get('/resources/{resource}/bookings', [BookingController::class, 'index']);
+    Route::get('/resources/{resource}/bookings/{booking}', [BookingController::class, 'show']);
+    Route::patch('/resources/{resource}/bookings/{booking}', [BookingController::class, 'update']);
     Route::delete('/resources/{resource}/bookings/{booking}', [BookingController::class, 'destroy']);
 
     Route::post('/resources', [ResourceController::class, 'store']);
