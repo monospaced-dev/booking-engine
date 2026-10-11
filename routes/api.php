@@ -18,7 +18,7 @@ Route::get('/user', function (Request $request) {
 Route::get('/health', function () {
     try {
         DB::connection()->getPdo();
-    } catch (\Throwable $e) {
+    } catch (Throwable $e) {
         return response()->json(['status' => 'error', 'database' => 'unreachable', 'message' => 'Database unavailable.', 'code' => 'database_unavailable'], 503);
     }
 
@@ -35,7 +35,6 @@ Route::middleware('auth.apikey')->group(function () {
     Route::post('/resources', [ResourceController::class, 'store']);
     Route::put('resources/{resource}', [ResourceController::class, 'update']);
     Route::get('/resources/{resource}/busy', [BusyRangesController::class, 'index']);
-
 
     Route::post('/resources/{resource}/blackout-dates', [BlackoutDateController::class, 'store']);
     Route::get('/resources/{resource}/blackout-dates', [BlackoutDateController::class, 'index']);

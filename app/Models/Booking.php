@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Models\Concerns\SerializesUtcTimestamps;
-
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -26,9 +25,8 @@ class Booking extends Model
     /**
      * Parse the during tstzrange column into starts_at and ends_at Carbon instances.
      * example: ["2026-07-14 09:00:00+00","2026-07-14 10:00:00+00")
-     * @param string $rawDuring Raw date/time of start and end in Google's format.
      *
-     * @return array
+     * @param  string  $rawDuring  Raw date/time of start and end in Google's format.
      */
     public function parseDuring(string $rawDuring): array
     {
@@ -40,7 +38,7 @@ class Booking extends Model
 
         return [
             'starts_at' => $startsAt,
-            'ends_at' => $endsAt
+            'ends_at' => $endsAt,
         ];
     }
 }

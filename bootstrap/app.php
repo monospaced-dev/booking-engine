@@ -1,9 +1,12 @@
 <?php
 
+use App\Http\Middleware\AuthenticateApiKey;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -14,7 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
-            'auth.apikey' => \App\Http\Middleware\AuthenticateApiKey::class,
+            'auth.apikey' => AuthenticateApiKey::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
@@ -22,9 +25,9 @@ return Application::configure(basePath: dirname(__DIR__))
             fn (Request $request) => $request->is('api/*'),
         );
 
-        $exceptions->render(function (\Symfony\Component\HttpKernel\Exception\NotFoundHttpException $e, Request $request) {
+        $exceptions->render(function (NotFoundHttpException $e, Request $request) {
             if (! $request->is('api/*')) {
-                return null;
+                return response()->json(['message' => 'Resource not found.'], 404);
             }
 
             $missingRoute = $request->route() === null;
@@ -34,14 +37,14 @@ return Application::configure(basePath: dirname(__DIR__))
                 'code' => $missingRoute ? 'route_not_found' : 'not_found',
             ], 404);
         });
-        $exceptions->respond(function (\Symfony\Component\HttpFoundation\Response $response) {
+        $exceptions->respond(function (Response $response) {
             if (! request()->is('api/*') || $response->getStatusCode() < 400) {
                 return $response;
             }
 
             $status = $response->getStatusCode();
             $payload = json_decode($response->getContent(), true) ?? [];
-            $payload['message'] ??= \Symfony\Component\HttpFoundation\Response::$statusTexts[$status] ?? 'Request failed.';
+            $payload['message'] ??= Response::$statusTexts[$status] ?? 'Request failed.';
             $payload['code'] ??= match ($status) {
                 401 => 'unauthorized',
                 403 => 'forbidden',

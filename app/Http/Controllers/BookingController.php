@@ -7,19 +7,20 @@ use App\Exceptions\BookingConflictException;
 use App\Models\Booking;
 use App\Models\Resource;
 use App\Rules\ExplicitDatetimeOffset;
-use Illuminate\Http\Request;
 use Carbon\Carbon;
+use Illuminate\Database\QueryException;
+use Illuminate\Http\Request;
 
 class BookingController extends Controller
 {
     public function index(Request $request, Resource $resource)
     {
         $validated = $request->validate([
-            'from' => ['required_with:to', 'nullable', 'date', new ExplicitDatetimeOffset()],
-            'to' => ['required_with:from', 'nullable', 'date', new ExplicitDatetimeOffset(), 'after:from'],
+            'from' => ['required_with:to', 'nullable', 'date', new ExplicitDatetimeOffset],
+            'to' => ['required_with:from', 'nullable', 'date', new ExplicitDatetimeOffset, 'after:from'],
         ]);
 
-        if (!empty($validated['from']) && !empty($validated['to'])) {
+        if (! empty($validated['from']) && ! empty($validated['to'])) {
             $bookings = $resource->bookings()
                 ->whereRaw('during && ?::tstzrange', [
                     sprintf(
@@ -50,8 +51,8 @@ class BookingController extends Controller
     public function store(Request $request, Resource $resource, CreateBooking $createBooking)
     {
         $validated = $request->validate([
-            'starts_at' => ['required', 'date', new ExplicitDatetimeOffset()],
-            'ends_at' => ['required', 'date', new ExplicitDatetimeOffset(), 'after:starts_at'],
+            'starts_at' => ['required', 'date', new ExplicitDatetimeOffset],
+            'ends_at' => ['required', 'date', new ExplicitDatetimeOffset, 'after:starts_at'],
             'metadata' => 'sometimes|array',
             'metadata.appointment_id' => 'sometimes|integer',
         ]);
@@ -80,7 +81,7 @@ class BookingController extends Controller
                 metadata: $validated['metadata'] ?? [],
                 idempotencyKey: $idempotencyKey,
             );
-        } catch (\Illuminate\Database\QueryException $e) {
+        } catch (QueryException $e) {
             // SQLSTATE 23505 = unique_violation on (resource_id, idempotency_key) —
             // a concurrent request with the same key won the race.
             if ($e->getCode() === '23505' && $idempotencyKey) {

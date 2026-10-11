@@ -18,7 +18,7 @@ class AuthenticateApiKey
     {
         $apiKey = $request->header('x-api-key');
 
-        if (!$apiKey) {
+        if (! $apiKey) {
             return response()->json(['message' => 'Unauthorized', 'code' => 'unauthorized'], 401);
         }
 
@@ -28,7 +28,7 @@ class AuthenticateApiKey
             ->where('is_active', true)
             ->first();
 
-        if (!$storedKey) {
+        if (! $storedKey) {
             return response()->json(['message' => 'Unauthorized', 'code' => 'unauthorized'], 401);
         }
 

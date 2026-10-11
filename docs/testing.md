@@ -33,3 +33,25 @@ Remove the disposable database when finished:
 ```sh
 docker stop booking-engine-tests
 ```
+
+## API contract checks
+
+`docs/openapi.yaml` is maintained by hand. Feature tests convert the actual
+Laravel HTTP responses (status, headers and raw JSON body) to PSR-7 and validate
+them with `league/openapi-psr7-validator` 0.24. Its dependencies resolve with
+Laravel 13 and PHP >=8.4.1 without updating existing packages. The tests exercise
+all service operations and their success, authentication, not-found, validation,
+conflict and unhealthy-database responses, including bodyless 204 responses.
+Negative checks verify the validator rejects missing fields, wrong types and
+legacy timestamp/error shapes. Run them with the same Postgres setup above:
+
+```sh
+DB_PASSWORD=testing vendor/bin/pest tests/Feature/OpenApiContractTest.php tests/Feature/GetBookingsTest.php
+```
+
+Use `assertOpenApi('/resources/{resource}/bookings', 'post')` on a test response.
+Pass the spec path template without `/api` and the HTTP method. Keep semantic
+assertions too: schema validation alone does not check ownership, interval
+boundaries, persistence, or whether `created` matches the returned status.
+The metadata schema deliberately retains B8's empty-array/object behavior;
+`anyOf` also avoids the validator treating an empty array as both PHP shapes.

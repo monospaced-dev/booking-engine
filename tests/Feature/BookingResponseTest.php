@@ -14,7 +14,6 @@ it('returns the full stored booking on create and replay matching GET', function
     expect($created->json())->toEqual($listed->json('0'))->toEqual($replayed->json());
 });
 
-
 it('uses UTC seconds precision for every booking and blackout timestamp', function () {
     $resource = Resource::factory()->create();
     $this->withHeaders(apiKeyHeader());

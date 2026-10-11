@@ -3,12 +3,13 @@
 namespace App\Actions;
 
 use App\Exceptions\BookingConflictException;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Database\QueryException;
 use App\Models\Booking;
 use Carbon\Carbon;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 
-class CreateBooking {
+class CreateBooking
+{
     /**
      * @throws BookingConflictException
      */
@@ -20,8 +21,7 @@ class CreateBooking {
         Carbon $endsAt,
         array $metadata = [],
         ?string $idempotencyKey = null,
-    ): Booking
-    {
+    ): Booking {
         $during = sprintf(
             '[%s,%s)',
             $startsAt->format('Y-m-d H:i:sP'),
@@ -49,13 +49,13 @@ class CreateBooking {
         } catch (QueryException $e) {
             // SQLSTATE 23P01 = exclusion_violation
             if ($e->getCode() === '23P01') {
-                throw new BookingConflictException("Requested time overlaps an existing booking for this resource.");
+                throw new BookingConflictException('Requested time overlaps an existing booking for this resource.');
             }
 
             throw $e;
         }
 
-        $booking = (new Booking())->newFromBuilder((array) $row);
+        $booking = (new Booking)->newFromBuilder((array) $row);
 
         $parsed = $booking->parseDuring($row->during);
 

@@ -10,14 +10,8 @@ use Illuminate\Http\Response;
 
 class BlackoutDateController extends Controller
 {
-
     /**
      * List blackout dates.
-     *
-     * @param Request $request
-     * @param Resource $resource
-     *
-     * @return JsonResponse
      */
     public function index(Request $request, Resource $resource): JsonResponse
     {
@@ -28,11 +22,6 @@ class BlackoutDateController extends Controller
 
     /**
      * Blackout dates controller for the API.
-     *
-     * @param Request $request
-     * @param Resource $resource
-     *
-     * @return JsonResponse
      */
     public function store(Request $request, Resource $resource): JsonResponse
     {
@@ -50,11 +39,6 @@ class BlackoutDateController extends Controller
 
     /**
      * Delete blackout date.
-     *
-     * @param Resource $resource
-     * @param BlackoutDate $blackoutDate
-     *
-     * @return JsonResponse|Response
      */
     public function destroy(Resource $resource, BlackoutDate $blackoutDate): JsonResponse|Response
     {
