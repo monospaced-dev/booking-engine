@@ -4,12 +4,7 @@ use App\Http\Controllers\BlackoutDateController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\BusyRangesController;
 use App\Http\Controllers\ResourceController;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');
 
 // Unauthenticated on purpose: k8s probes and external uptime monitors (Uptime
 // Kuma) can't carry an API key, so this stays outside the auth.apikey group.
