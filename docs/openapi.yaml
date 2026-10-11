@@ -90,7 +90,7 @@ paths:
       operationId: listBookings
       summary: List this resource's bookings
       description: |
-        No pagination or ordering guarantee. With both from and to, returns
+        Ordered by range start ascending, then id ascending; no pagination. With both from and to, returns
         bookings overlapping the half-open window; ranges are not clipped.
         The two bounds must be supplied together, with to later than from.
       parameters:
@@ -360,7 +360,7 @@ paths:
     get:
       operationId: listBlackouts
       summary: List this resource's blackout ranges
-      description: Both from/to or neither; half-open overlap, unclipped rows, no ordering guarantee.
+      description: Both from/to or neither; half-open overlap, unclipped rows, ordered by range start ascending then id ascending.
       parameters:
         - name: from
           in: query

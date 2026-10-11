@@ -28,10 +28,10 @@ class BookingController extends Controller
         if (! empty($validated['from']) && ! empty($validated['to'])) {
             $bookings = $resource->bookings()
                 ->overlapping(Carbon::parse($validated['from'])->utc(), Carbon::parse($validated['to'])->utc())
-                ->get();
+                ->orderByRaw('lower(during)')->orderBy('id')->get();
         } else {
             \Log::debug("BookingController: Fetching all bookings for resource {$resource->id}");
-            $bookings = $resource->bookings()->get();
+            $bookings = $resource->bookings()->orderByRaw('lower(during)')->orderBy('id')->get();
         }
 
         // Parse during to starts_at and ends_at fields in json
