@@ -20,6 +20,14 @@ class Booking extends Model
 
     protected $hidden = ['during'];
 
+    public function attributesToArray(): array
+    {
+        $attributes = parent::attributesToArray();
+        $attributes['metadata'] = (object) ($this->metadata ?? []);
+
+        return $attributes;
+    }
+
     public function scopeOverlapping(Builder $query, CarbonInterface $from, CarbonInterface $to): Builder
     {
         return $query->whereRaw('during && ?::tstzrange', [BookingRange::literal($from, $to)]);

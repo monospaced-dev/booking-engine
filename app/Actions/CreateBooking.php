@@ -38,7 +38,7 @@ class CreateBooking
                         $externalType,
                         $externalId,
                         $during,
-                        json_encode($metadata),
+                        json_encode((object) $metadata),
                         $idempotencyKey,
                     ]
                 );

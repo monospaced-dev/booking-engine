@@ -53,8 +53,7 @@ Use `assertOpenApi('/resources/{resource}/bookings', 'post')` on a test response
 Pass the spec path template without `/api` and the HTTP method. Keep semantic
 assertions too: schema validation alone does not check ownership, interval
 boundaries, persistence, or whether `created` matches the returned status.
-The metadata schema deliberately retains B8's empty-array/object behavior;
-`anyOf` also avoids the validator treating an empty array as both PHP shapes.
+Metadata responses are always objects; requests additionally accept an empty array.
 
 
 ## Idempotency races

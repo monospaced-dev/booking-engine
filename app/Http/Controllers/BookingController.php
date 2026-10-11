@@ -8,6 +8,7 @@ use App\Exceptions\BookingConflictException;
 use App\Models\Booking;
 use App\Models\Resource;
 use App\Rules\ExplicitDatetimeOffset;
+use App\Rules\FlatMetadata;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -47,11 +48,17 @@ class BookingController extends Controller
 
     public function store(Request $request, Resource $resource, CreateBooking $createBooking)
     {
+        // Metadata is opaque: undo global string trimming/null conversion only
+        // for this field, keeping the original JSON types and values.
+        $json = json_decode($request->getContent());
+        if (is_object($json) && property_exists($json, 'metadata')) {
+            $request->merge(['metadata' => json_decode($request->getContent(), true)['metadata']]);
+        }
+
         $validated = $request->validate([
             'starts_at' => ['required', 'date', new ExplicitDatetimeOffset],
             'ends_at' => ['required', 'date', new ExplicitDatetimeOffset, 'after:starts_at'],
-            'metadata' => 'sometimes|array',
-            'metadata.appointment_id' => 'sometimes|integer',
+            'metadata' => ['sometimes', 'array', new FlatMetadata(is_object($json->metadata ?? null))],
         ]);
 
         $idempotencyKey = $request->header('Idempotency-Key');
@@ -116,9 +123,12 @@ class BookingController extends Controller
             return null;
         }
 
+        $storedMetadata = $existing->metadata ?? [];
+        ksort($storedMetadata);
+        ksort($metadata);
         $parsed = $existing->parseDuring($existing->during);
         if (! $parsed['starts_at']->equalTo($startsAt) || ! $parsed['ends_at']->equalTo($endsAt)
-            || $existing->metadata !== $metadata) {
+            || $storedMetadata !== $metadata) {
             return response()->json([
                 'message' => 'Idempotency key has already been used with a different booking payload.',
                 'code' => 'idempotency_mismatch',
