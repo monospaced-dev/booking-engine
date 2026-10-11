@@ -142,13 +142,20 @@ paths:
       description: |
         Rejects overlap with other bookings, but does not enforce blackouts.
         An existing Idempotency-Key for this resource returns the stored booking
-        with 200, without comparing payloads. Keys are scoped to the resource.
-        Concurrent replay and oversized-key hardening are not implemented.
+        with 200 only when UTC-normalised starts_at, ends_at and retained metadata match.
+        Datetimes compare at the existing stored second precision. Omitted metadata
+        compares as an empty array. A mismatch returns 422 idempotency_mismatch.
+        Keys are scoped to the resource.
+        Concurrent retries recover both exclusion and unique constraint races by
+        re-selecting the resource-scoped key and applying the same comparison.
+        An exclusion failure without a stored row for this key remains 409 booking_conflict.
+        Supplied keys must contain 1–128 ASCII letters, digits, underscores or hyphens.
+        Invalid keys return 422 with validation_failed.
       parameters:
         - name: Idempotency-Key
           in: header
           required: false
-          schema: {type: string}
+          schema: {type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_-]{1,128}$'}
       requestBody:
         required: true
         content:
@@ -192,7 +199,28 @@ paths:
                   message: {type: string}
                   code: {type: string, enum: [booking_conflict]}
                   error: {type: string, description: Retained legacy alias of message}
-        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '422':
+          description: Invalid input or key (validation_failed), or key reuse with a different payload (idempotency_mismatch)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [message, code, errors]
+                    properties:
+                      message: {type: string}
+                      code: {type: string, enum: [validation_failed]}
+                      errors:
+                        type: object
+                        additionalProperties:
+                          type: array
+                          items: {type: string}
+                  - type: object
+                    additionalProperties: false
+                    required: [message, code]
+                    properties:
+                      message: {type: string}
+                      code: {type: string, enum: [idempotency_mismatch]}
         default: {$ref: '#/components/responses/Error'}
   /resources/{resource}/bookings/{booking}:
     parameters:

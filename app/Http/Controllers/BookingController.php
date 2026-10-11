@@ -9,7 +9,9 @@ use App\Models\Resource;
 use App\Rules\ExplicitDatetimeOffset;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class BookingController extends Controller
 {
@@ -58,16 +60,21 @@ class BookingController extends Controller
         ]);
 
         $idempotencyKey = $request->header('Idempotency-Key');
+        if ($request->headers->has('Idempotency-Key')) {
+            Validator::make(['Idempotency-Key' => $idempotencyKey], [
+                'Idempotency-Key' => ['required', 'string', 'regex:/^[A-Za-z0-9_-]{1,128}$/D'],
+            ])->validate();
+        }
 
-        if ($idempotencyKey) {
-            $existing = $resource->bookings()->where('idempotency_key', $idempotencyKey)->first();
+        // Match the existing INSERT's UTC-second precision and validated metadata.
+        $startsAt = Carbon::parse($validated['starts_at'])->utc()->startOfSecond();
+        $endsAt = Carbon::parse($validated['ends_at'])->utc()->startOfSecond();
+        $metadata = $validated['metadata'] ?? [];
 
-            if ($existing) {
-                $parsed = $existing->parseDuring($existing->during);
-                $existing->starts_at = $parsed['starts_at'];
-                $existing->ends_at = $parsed['ends_at'];
-
-                return response()->json($existing, 200);
+        if ($idempotencyKey !== null) {
+            $replay = $this->replay($resource, $idempotencyKey, $startsAt, $endsAt, $metadata);
+            if ($replay !== null) {
+                return $replay;
             }
         }
 
@@ -76,29 +83,57 @@ class BookingController extends Controller
                 resourceId: $resource->id,
                 externalType: $resource->external_type,
                 externalId: $resource->external_id,
-                startsAt: Carbon::parse($validated['starts_at'])->utc(),
-                endsAt: Carbon::parse($validated['ends_at'])->utc(),
-                metadata: $validated['metadata'] ?? [],
+                startsAt: $startsAt,
+                endsAt: $endsAt,
+                metadata: $metadata,
                 idempotencyKey: $idempotencyKey,
             );
         } catch (QueryException $e) {
             // SQLSTATE 23505 = unique_violation on (resource_id, idempotency_key) —
             // a concurrent request with the same key won the race.
-            if ($e->getCode() === '23505' && $idempotencyKey) {
-                $existing = $resource->bookings()->where('idempotency_key', $idempotencyKey)->firstOrFail();
-
-                $parsed = $existing->parseDuring($existing->during);
-                $existing->starts_at = $parsed['starts_at'];
-                $existing->ends_at = $parsed['ends_at'];
-
-                return response()->json($existing, 200);
+            if ($e->getCode() === '23505' && $idempotencyKey !== null) {
+                $replay = $this->replay($resource, $idempotencyKey, $startsAt, $endsAt, $metadata);
+                if ($replay !== null) {
+                    return $replay;
+                }
             }
             throw $e;
         } catch (BookingConflictException $e) {
+            // Postgres can check the exclusion constraint before the unique key.
+            // The failed INSERT transaction has rolled back; re-read the winner.
+            if ($idempotencyKey !== null) {
+                $replay = $this->replay($resource, $idempotencyKey, $startsAt, $endsAt, $metadata);
+                if ($replay !== null) {
+                    return $replay;
+                }
+            }
+
             return response()->json(['error' => $e->getMessage(), 'message' => $e->getMessage(), 'code' => 'booking_conflict'], 409);
         }
 
         return response()->json($booking, 201);
+    }
+
+    private function replay(Resource $resource, string $key, Carbon $startsAt, Carbon $endsAt, array $metadata): ?JsonResponse
+    {
+        $existing = $resource->bookings()->where('idempotency_key', $key)->first();
+        if ($existing === null) {
+            return null;
+        }
+
+        $parsed = $existing->parseDuring($existing->during);
+        if (! $parsed['starts_at']->equalTo($startsAt) || ! $parsed['ends_at']->equalTo($endsAt)
+            || $existing->metadata !== $metadata) {
+            return response()->json([
+                'message' => 'Idempotency key has already been used with a different booking payload.',
+                'code' => 'idempotency_mismatch',
+            ], 422);
+        }
+
+        $existing->starts_at = $parsed['starts_at'];
+        $existing->ends_at = $parsed['ends_at'];
+
+        return response()->json($existing, 200);
     }
 
     public function destroy(Resource $resource, Booking $booking)
