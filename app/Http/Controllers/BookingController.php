@@ -201,13 +201,26 @@ class BookingController extends Controller
         return response()->json(['message' => 'Booking version does not match If-Match.', 'code' => 'precondition_failed'], 412);
     }
 
-    public function destroy(Resource $resource, Booking $booking)
+    public function destroy(Request $request, Resource $resource, Booking $booking)
     {
         if ($booking->resource_id !== $resource->id) {
             abort(404);
         }
 
-        $booking->delete();
+        $query = $resource->bookings()->whereKey($booking->id);
+        if ($request->headers->has('If-Match')) {
+            $tag = $request->header('If-Match');
+            if (! preg_match('/^"([1-9][0-9]{0,9})"$/D', $tag, $matches) || (int) $matches[1] > 2147483647) {
+                return $this->preconditionFailed();
+            }
+            // PostgreSQL rechecks this predicate after a concurrent UPDATE commits.
+            // Never compare against the potentially stale route-bound model version.
+            if ($query->where('lock_version', $matches[1])->delete() === 0) {
+                return $this->preconditionFailed();
+            }
+        } else {
+            $query->delete();
+        }
 
         return response()->noContent();
     }

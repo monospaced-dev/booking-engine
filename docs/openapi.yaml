@@ -313,11 +313,32 @@ paths:
     delete:
       operationId: deleteBooking
       summary: Delete a booking belonging to this resource
+      description: |
+        Without If-Match deletion is unconditional. When supplied, one strong quoted
+        lock_version must match in the same parent-scoped DELETE statement. Stale,
+        weak, wildcard, list or malformed tags return 412 precondition_failed and
+        retain the booking. Missing or foreign bookings return 404.
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          description: Optional strong quoted lock_version from the latest booking ETag.
+          schema: {type: string, pattern: '^"[1-9][0-9]{0,9}"$', example: '"1"'}
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
         '429': {$ref: '#/components/responses/TooManyRequests'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '412':
+          description: If-Match does not match the current version; booking retained
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, code]
+                properties:
+                  message: {type: string}
+                  code: {type: string, enum: [precondition_failed]}
         default: {$ref: '#/components/responses/Error'}
   /resources/{resource}/busy:
     parameters:
