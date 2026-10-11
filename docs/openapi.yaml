@@ -79,6 +79,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ResourceResult'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
         default: {$ref: '#/components/responses/Error'}
@@ -89,7 +90,7 @@ paths:
       operationId: listBookings
       summary: List this resource's bookings
       description: |
-        No pagination or ordering guarantee. With both from and to, returns
+        Ordered by range start ascending, then id ascending; no pagination. With both from and to, returns
         bookings overlapping the half-open window; ranges are not clipped.
         The two bounds must be supplied together, with to later than from.
       parameters:
@@ -107,6 +108,7 @@ paths:
               schema:
                 type: array
                 items: {$ref: '#/components/schemas/Booking'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
@@ -165,6 +167,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Booking'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409':
@@ -221,6 +224,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Booking'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         default: {$ref: '#/components/responses/Error'}
@@ -267,6 +271,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Booking'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409':
@@ -308,10 +313,32 @@ paths:
     delete:
       operationId: deleteBooking
       summary: Delete a booking belonging to this resource
+      description: |
+        Without If-Match deletion is unconditional. When supplied, one strong quoted
+        lock_version must match in the same parent-scoped DELETE statement. Stale,
+        weak, wildcard, list or malformed tags return 412 precondition_failed and
+        retain the booking. Missing or foreign bookings return 404.
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          description: Optional strong quoted lock_version from the latest booking ETag.
+          schema: {type: string, pattern: '^"[1-9][0-9]{0,9}"$', example: '"1"'}
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '412':
+          description: If-Match does not match the current version; booking retained
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, code]
+                properties:
+                  message: {type: string}
+                  code: {type: string, enum: [precondition_failed]}
         default: {$ref: '#/components/responses/Error'}
   /resources/{resource}/busy:
     parameters:
@@ -343,6 +370,7 @@ paths:
                   properties:
                     starts_at: {$ref: '#/components/schemas/UtcTimestamp'}
                     ends_at: {$ref: '#/components/schemas/UtcTimestamp'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
@@ -353,7 +381,7 @@ paths:
     get:
       operationId: listBlackouts
       summary: List this resource's blackout ranges
-      description: Both from/to or neither; half-open overlap, unclipped rows, no ordering guarantee.
+      description: Both from/to or neither; half-open overlap, unclipped rows, ordered by range start ascending then id ascending.
       parameters:
         - name: from
           in: query
@@ -369,6 +397,7 @@ paths:
               schema:
                 type: array
                 items: {$ref: '#/components/schemas/Blackout'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
@@ -397,6 +426,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Blackout'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
@@ -413,6 +443,7 @@ paths:
       summary: Delete a blackout belonging to this resource
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         default: {$ref: '#/components/responses/Error'}
@@ -434,6 +465,21 @@ components:
       required: true
       schema: {type: integer, minimum: 1, maximum: 999999999999999999}
   responses:
+    TooManyRequests:
+      description: Per-API-key request limit exceeded (default 600 per minute).
+      headers:
+        Retry-After:
+          description: Seconds until requests may be retried.
+          required: true
+          schema: {type: integer, minimum: 1}
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [message, code]
+            properties:
+              message: {type: string}
+              code: {type: string, enum: [too_many_requests]}
     NoContent:
       description: Success with an empty response body
     Unauthorized:

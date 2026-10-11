@@ -128,3 +128,45 @@ It runs on a self-hosted arm64 k3s cluster, managed by Argo CD from
 [homelab-platform](https://github.com/monospaced-dev/homelab-platform).
 Images are deployed by digest. Kyverno admits only images signed by this
 workflow, and the namespace is locked down with default-deny NetworkPolicies.
+
+## Operability
+
+Authenticated `/api` routes share a per-API-key budget across routes: by default
+600 requests per minute, set by `API_RATE_LIMIT_PER_MINUTE`. Excess requests return
+429 `too_many_requests` with `Retry-After` in seconds. `/api/health` and `/api/ping`
+are exempt. Key usage timestamps update only when null or strictly older than
+60 seconds, via one conditional UPDATE.
+
+The configured cache store is used for throttling. `config/cache.php` defaults to
+`database`, `.env.example` specifies `CACHE_STORE=database`, and the production-mode
+Compose service does not override it. Limits are shared across pods using the
+same database/cache table and cache prefix. External production environment
+configuration is outside this repository; verify it has no `CACHE_STORE` override.
+A `file` or `array` override makes limits local to the pod or process respectively.
+
+Prometheus should scrape **HTTP port 8080, path `/metrics`** on each nginx/FPM pod,
+with `Authorization: Bearer <METRICS_TOKEN>`. Port 9000 speaks FastCGI, not HTTP.
+Set `METRICS_TOKEN` to a nonempty secret; its default is unset (endpoint returns
+404). Missing or wrong bearer credentials return 401; API keys do not grant access.
+The token comparison uses `hash_equals`. No Kubernetes manifests are changed.
+
+`promphp/prometheus_client_php` provides Prometheus text format:
+
+- `booking_engine_http_requests_total`: request counter.
+- `booking_engine_http_request_duration_seconds`: histogram in seconds, using the
+  client's default buckets.
+
+Both use `method`, `route` and `status` labels. Routes include their URI template
+(e.g. `/api/resources/{resource}/busy`); unknown routes use `unmatched`.
+Recording failures are caught and logged at warning level without changing the
+API response. Final rendered errors are counted; `/metrics` requests are excluded
+regardless of status.
+Latency runs from entry into global middleware through rendering the response,
+excluding network transmission. APCu storage in the FPM image shares metrics among
+workers in one pod; counters reset on restart or APCu eviction and are **not shared
+across pods**. Scrape every pod and aggregate in Prometheus.
+`METRICS_STORAGE` selects `apcu` (default) or `memory`. Tests explicitly select
+`memory`. If APCu is missing or disabled, `apcu` falls back to in-memory storage;
+in-memory metrics last only for the current application process/request and do
+not persist across separate FPM requests. `/metrics` is operational and excluded
+from the API OpenAPI spec.

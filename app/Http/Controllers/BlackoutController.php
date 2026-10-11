@@ -25,7 +25,7 @@ class BlackoutController extends Controller
             $query->overlapping(Carbon::parse($validated['from'])->utc(), Carbon::parse($validated['to'])->utc());
         }
 
-        return response()->json($query->get());
+        return response()->json($query->orderByRaw('lower(during)')->orderBy('id')->get());
     }
 
     public function store(Request $request, Resource $resource): JsonResponse

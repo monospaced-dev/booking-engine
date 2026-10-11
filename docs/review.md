@@ -92,7 +92,7 @@ Severity is relative to this service's one job: returning a *wrong or missing* b
 - Low likelihood (the consumer sends real IDs) but trivial to fix with a route pattern (`[0-9]{1,18}`).
 
 ### B10. Inconsistent error and response shapes — **verified**
-**Status:** Fixed 2026-10-10 on `fix/phase-3-contract`. Hand-written `docs/openapi.yaml` and real-response feature validation cover the normalized contract. All API errors have `message` and `code`; conflict `error` remains. Ownership mismatches return 404; unknown routes use `route_not_found`, missing records use `not_found`. Booking and blackout response timestamps use UTC seconds with `+00:00`. POST bookings/blackouts return complete stored objects matching GET. Resource creation returns 201; existing resources return 200. See `docs/phase-3-contract-changes.md` for the consumer migration table. The findings below describe the original behavior.
+**Status:** Fixed 2026-10-10 on `fix/phase-3-contract`. Hand-written `docs/openapi.yaml` and real-response feature validation cover the normalized contract. All API errors have `message` and `code`; conflict `error` remains. Ownership mismatches return 404; unknown routes use `route_not_found`, missing records use `not_found`. Booking and blackout response timestamps use UTC seconds with `+00:00`. POST bookings/blackouts return complete stored objects matching GET. Resource creation returns 201; existing resources return 200. See `docs/consumer-contract-changes.md` for the consumer migration table. The findings below describe the original behavior.
 
 | Concern | Where | Inconsistency |
 |---|---|---|
@@ -123,6 +123,7 @@ None are wrong in isolation. Together they are what a consumer's HTTP mocks drif
 - **Scaffold tests:** **Status:** Already removed on main before Phase 6; no ExampleTest files remain. Original finding: `ExampleTest` (hits `/`, the Laravel welcome page) and `tests/Unit/ExampleTest.php` are noise.
 
 ### B13. Smaller items
+**Status (Phase 8 subset):** Implemented on `feat/phase-8-operability`: per-key throttle using the configured cache store (600/minute default, configurable; probes exempt), one conditional API-key usage UPDATE only for null or older-than-60-second timestamps, and bearer-protected APCu Prometheus metrics. Booking/blackout lists now order by range start then id; booking DELETE supports optional atomic If-Match; the welcome route/view are removed. No migrations. Pagination, unused indexes, Sanctum/users removal, and other remaining B13 items are outside Phase 8. Phase 7 already replaced blackout_dates and its indexing/local-time hazards. Original findings follow.
 - **Per-request write on every call** — `AuthenticateApiKey.php:35-36` runs `UPDATE api_keys` on every request. That causes row-lock contention on a single hot row under concurrent load. Only update when `last_used_at` is older than a minute.
 - **No rate limiting** — `routes/api.php` has no throttle. A client retry loop is unbounded. Low risk with one trusted consumer, but cheap insurance.
 - **No `blackout_dates` index** — the migration creates the FK with no `(resource_id, date)` index (Postgres does not index foreign keys). Invisible at current volume. I did not inspect `pg_indexes` for this table, only the migration.
@@ -207,6 +208,7 @@ Legend: **Fits oracle?** = stays a pure busy-time store/merge, with no availabil
 - **Verdict:** defer until holds or a second writer exist.
 
 ### F8. OpenAPI, per-consumer keys + rate limits, `/metrics`
+**Status:** OpenAPI was implemented in Phase 3. Phase 8 implements flat per-key throttling, API-key usage write reduction, and request counter/duration histogram metrics with method/route-template/status labels. `/metrics` uses independent constant-time bearer-token access (unset token: 404; wrong/missing: 401), no API key, and is documented in README rather than OpenAPI. Production uses APCu within each FPM pod; tests use in-memory storage. Scrape HTTP port 8080 at `/metrics` on each pod. Repository production cache default is database, sharing throttle counts among pods using the same database and prefix; external environment overrides cannot be verified here. Scoping and Kubernetes manifests remain outside scope. The original proposals follow.
 - **OpenAPI — do it, and use it as a test, not just documentation.** Effort is S–M. The consumer's tests mock HTTP, so nothing currently checks that the mocks match the real service. Write the spec by hand, then validate real responses against it in this repo's feature tests (for example with `league/openapi-psr7-validator`; I haven't checked fit with the current Laravel version). This also forces the response shapes in B10 to be decided once.
 - **Per-consumer keys:** the schema already supports N keys with a name. What's missing is *scoping* (which resources a key may touch). That only matters with a second consumer. Defer.
 - **Rate limits:** the realistic threat is a retry storm from the one consumer, not abuse. A flat per-key throttle (`RateLimiter::for('api', fn ($r) => Limit::perMinute(600)->by($key))`) is S effort. Skip the per-key configurable limits for now.
@@ -232,6 +234,8 @@ Legend: **Fits oracle?** = stays a pure busy-time store/merge, with no availabil
 ---
 
 ## 4. Ranked improvements and features
+
+**Status (#10 and small leftovers):** Implemented in Phase 8 on `feat/phase-8-operability`. See B13 and F8. Optional DELETE If-Match is compared in the same parent-scoped DELETE, with a two-process PostgreSQL PATCH/DELETE race regression. Lists order by `lower(during), id`; welcome page removed; consumer document renamed to `docs/consumer-contract-changes.md`. No migrations or new infrastructure. Full suite: 291 tests, 1,263 assertions on PostgreSQL 17.11 with `--fail-on-risky`; production FPM image builds with APCu and cross-request persistence verified.
 
 **Status (#7):** Implemented in Phase 7, including resource timezone removal and the Phase 6 ID carry-over fix. See F3, B2, B9 and B11. Bookings remain allowed to overlap blackouts; recurrence, bulk endpoints, external calendars and B13 remain outside scope.
 

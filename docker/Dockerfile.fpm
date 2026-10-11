@@ -36,8 +36,10 @@ RUN set -eux; \
     savedAptMark="$(apt-mark showmanual)"; \
     apt-get update; \
     apt-get upgrade -y --no-install-recommends; \
-    apt-get install -y --no-install-recommends libpq-dev libzip-dev; \
+    apt-get install -y --no-install-recommends libpq-dev libzip-dev $PHPIZE_DEPS; \
     docker-php-ext-install -j"$(nproc)" pdo_pgsql pgsql bcmath opcache zip; \
+    pecl install apcu-5.1.28; \
+    docker-php-ext-enable apcu; \
     apt-mark auto '.*' > /dev/null; \
     [ -z "$savedAptMark" ] || apt-mark manual $savedAptMark; \
     find /usr/local -type f -executable -exec ldd '{}' ';' \
@@ -48,7 +50,7 @@ RUN set -eux; \
     apt-mark auto autoconf dpkg-dev file g++ gcc libc6-dev make pkg-config re2c > /dev/null; \
     apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
     rm -rf /var/lib/apt/lists/*; \
-    php -m | grep -E '^(pdo_pgsql|pgsql|bcmath|Zend OPcache|zip)$'
+    php -m | grep -E '^(apcu|pdo_pgsql|pgsql|bcmath|Zend OPcache|zip)$'
 
 # Recommended production opcache settings
 RUN { \
