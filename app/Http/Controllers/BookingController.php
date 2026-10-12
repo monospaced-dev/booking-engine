@@ -14,6 +14,7 @@ use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 class BookingController extends Controller
@@ -26,12 +27,12 @@ class BookingController extends Controller
         ]);
 
         if (! empty($validated['from']) && ! empty($validated['to'])) {
-            $bookings = $resource->bookings()
+            $bookings = $resource->bookings()->active()
                 ->overlapping(Carbon::parse($validated['from'])->utc(), Carbon::parse($validated['to'])->utc())
                 ->orderByRaw('lower(during)')->orderBy('id')->get();
         } else {
             \Log::debug("BookingController: Fetching all bookings for resource {$resource->id}");
-            $bookings = $resource->bookings()->orderByRaw('lower(during)')->orderBy('id')->get();
+            $bookings = $resource->bookings()->active()->orderByRaw('lower(during)')->orderBy('id')->get();
         }
 
         // Parse during to starts_at and ends_at fields in json
@@ -59,6 +60,7 @@ class BookingController extends Controller
         $validated = $request->validate([
             'starts_at' => ['required', 'date', new ExplicitDatetimeOffset],
             'ends_at' => ['required', 'date', new ExplicitDatetimeOffset, 'after:starts_at', new BookingDuration($request->input('starts_at'))],
+            'hold_seconds' => ['sometimes', 'required', 'integer', 'between:60,900'],
             'metadata' => ['sometimes', 'array', new FlatMetadata(is_object($json->metadata ?? null))],
         ]);
 
@@ -73,9 +75,10 @@ class BookingController extends Controller
         $startsAt = Carbon::parse($validated['starts_at'])->utc()->startOfSecond();
         $endsAt = Carbon::parse($validated['ends_at'])->utc()->startOfSecond();
         $metadata = $validated['metadata'] ?? [];
+        $holdSeconds = isset($validated['hold_seconds']) ? (int) $validated['hold_seconds'] : null;
 
         if ($idempotencyKey !== null) {
-            $replay = $this->replay($resource, $idempotencyKey, $startsAt, $endsAt, $metadata);
+            $replay = $this->replay($resource, $idempotencyKey, $startsAt, $endsAt, $metadata, $holdSeconds);
             if ($replay !== null) {
                 return $replay;
             }
@@ -90,12 +93,13 @@ class BookingController extends Controller
                 endsAt: $endsAt,
                 metadata: $metadata,
                 idempotencyKey: $idempotencyKey,
+                holdSeconds: $holdSeconds,
             );
         } catch (QueryException $e) {
             // SQLSTATE 23505 = unique_violation on (resource_id, idempotency_key) —
             // a concurrent request with the same key won the race.
             if ($e->getCode() === '23505' && $idempotencyKey !== null) {
-                $replay = $this->replay($resource, $idempotencyKey, $startsAt, $endsAt, $metadata);
+                $replay = $this->replay($resource, $idempotencyKey, $startsAt, $endsAt, $metadata, $holdSeconds);
                 if ($replay !== null) {
                     return $replay;
                 }
@@ -105,7 +109,7 @@ class BookingController extends Controller
             // Postgres can check the exclusion constraint before the unique key.
             // The failed INSERT transaction has rolled back; re-read the winner.
             if ($idempotencyKey !== null) {
-                $replay = $this->replay($resource, $idempotencyKey, $startsAt, $endsAt, $metadata);
+                $replay = $this->replay($resource, $idempotencyKey, $startsAt, $endsAt, $metadata, $holdSeconds);
                 if ($replay !== null) {
                     return $replay;
                 }
@@ -117,9 +121,9 @@ class BookingController extends Controller
         return $this->bookingResponse($booking, 201);
     }
 
-    private function replay(Resource $resource, string $key, Carbon $startsAt, Carbon $endsAt, array $metadata): ?JsonResponse
+    private function replay(Resource $resource, string $key, Carbon $startsAt, Carbon $endsAt, array $metadata, ?int $holdSeconds): ?JsonResponse
     {
-        $existing = $resource->bookings()->where('idempotency_key', $key)->first();
+        $existing = $resource->bookings()->active()->where('idempotency_key', $key)->first();
         if ($existing === null) {
             return null;
         }
@@ -129,7 +133,7 @@ class BookingController extends Controller
         ksort($metadata);
         $parsed = $existing->parseDuring($existing->during);
         if (! $parsed['starts_at']->equalTo($startsAt) || ! $parsed['ends_at']->equalTo($endsAt)
-            || $storedMetadata !== $metadata) {
+            || $storedMetadata !== $metadata || $existing->hold_seconds !== $holdSeconds) {
             return response()->json([
                 'message' => 'Idempotency key has already been used with a different booking payload.',
                 'code' => 'idempotency_mismatch',
@@ -194,6 +198,54 @@ class BookingController extends Controller
         }
 
         return $this->bookingResponse($updated);
+    }
+
+    public function confirm(Request $request, Resource $resource, string $booking): JsonResponse
+    {
+        $version = null;
+        if ($request->headers->has('If-Match')) {
+            $tag = $request->header('If-Match');
+            if (! preg_match('/^"([1-9][0-9]{0,9})"$/D', $tag, $matches) || (int) $matches[1] > 2147483647) {
+                // Resolve ownership before reporting a precondition failure.
+                abort_unless($resource->bookings()->whereKey($booking)->exists(), 404);
+
+                return $this->preconditionFailed();
+            }
+            $version = $matches[1];
+        }
+
+        return DB::transaction(function () use ($resource, $booking, $version) {
+            $row = DB::selectOne("UPDATE bookings SET status = 'confirmed', expires_at = NULL,
+                lock_version = lock_version + 1, updated_at = clock_timestamp()
+                WHERE id = ? AND resource_id = ? AND status = 'held' AND expires_at > now()"
+                .($version === null ? '' : ' AND lock_version = ?').' RETURNING *',
+                $version === null ? [$booking, $resource->id] : [$booking, $resource->id, $version]);
+            if ($row !== null) {
+                return $this->bookingResponse((new Booking)->newFromBuilder((array) $row));
+            }
+            // Lock fallback reads so concurrent deletes/updates cannot make an
+            // already-confirmed success return a stale object or ETag.
+            $existing = $resource->bookings()->whereKey($booking)->lockForUpdate()->first();
+            if ($existing === null) {
+                $expired = DB::table('expired_booking_holds')->where('booking_id', $booking)->where('resource_id', $resource->id)->exists();
+                abort_unless($expired, 404);
+
+                return $this->holdExpired();
+            }
+            if ($version !== null && (string) $existing->lock_version !== $version) {
+                return $this->preconditionFailed();
+            }
+            if ($existing->status === 'confirmed') {
+                return $this->bookingResponse($existing);
+            }
+
+            return $this->holdExpired();
+        });
+    }
+
+    private function holdExpired(): JsonResponse
+    {
+        return response()->json(['message' => 'Booking hold has expired.', 'code' => 'hold_expired'], 410);
     }
 
     private function preconditionFailed(): JsonResponse

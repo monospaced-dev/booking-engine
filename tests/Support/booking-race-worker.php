@@ -10,7 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 $input = json_decode(fgets(STDIN), true, flags: JSON_THROW_ON_ERROR);
-if (($input['mode'] ?? 'insert') === 'patch') {
+if (in_array($input['mode'] ?? 'insert', ['patch', 'hold-confirm', 'hold-insert'], true)) {
     $app = require __DIR__.'/../../bootstrap/app.php';
     $kernel = $app->make(Kernel::class);
     $kernel->bootstrap();
@@ -27,7 +27,22 @@ if (isset($connection)) {
     $pdo->beginTransaction();
 }
 try {
-    if (($input['mode'] ?? 'insert') === 'patch') {
+    if (in_array($input['mode'] ?? '', ['hold-confirm', 'hold-insert'], true)) {
+        // A transaction's now() is fixed. Use a later database clock value for
+        // confirm: live for this worker, expired for the later parent transaction.
+        // For cleanup, make it expired for both transactions. No sleeps.
+        $connection->update('UPDATE bookings SET expires_at = '.($input['mode'] === 'hold-confirm' ? 'clock_timestamp()' : 'now()').' WHERE id = ?', [$input['booking_id']]);
+        $request = Request::create($input['mode'] === 'hold-confirm' ? $input['uri'] : $input['path'], 'POST', server: [
+            'CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json',
+            'HTTP_X_API_KEY' => $input['headers']['X-API-Key'],
+        ], content: json_encode($input['payload'], JSON_THROW_ON_ERROR));
+        $response = $kernel->handle($request);
+        $expected = $input['mode'] === 'hold-confirm' ? 200 : 201;
+        if ($response->getStatusCode() !== $expected) {
+            throw new RuntimeException($response->getContent());
+        }
+        fwrite(STDOUT, $response->getStatusCode()."\n");
+    } elseif (($input['mode'] ?? 'insert') === 'patch') {
         $request = Request::create($input['uri'], 'PATCH', server: [
             'CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json',
             'HTTP_X_API_KEY' => $input['headers']['X-API-Key'], 'HTTP_IF_MATCH' => $input['headers']['If-Match'],

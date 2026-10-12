@@ -22,17 +22,20 @@ class CreateBooking
         Carbon $endsAt,
         array $metadata = [],
         ?string $idempotencyKey = null,
+        ?int $holdSeconds = null,
     ): Booking {
         $during = BookingRange::literal($startsAt, $endsAt);
 
         try {
             // Wrapped in DB::transaction() so a failed INSERT rolls back to a
             // savepoint rather than aborting any enclosing transaction
-            $row = DB::transaction(function () use ($resourceId, $externalType, $externalId, $during, $metadata, $idempotencyKey) {
+            $row = DB::transaction(function () use ($resourceId, $externalType, $externalId, $during, $metadata, $idempotencyKey, $holdSeconds) {
+                ExpireBookingHolds::handle($resourceId);
+
                 return DB::selectOne(
-                    'INSERT INTO bookings (resource_id, external_type, external_id, during, metadata, idempotency_key, created_at, updated_at)
-                 VALUES (?, ?, ?, ?::tstzrange, ?, ?, now(), now())
-                 RETURNING lock_version, id, resource_id, external_type, external_id, during, metadata, idempotency_key, created_at, updated_at',
+                    'INSERT INTO bookings (resource_id, external_type, external_id, during, metadata, idempotency_key, status, expires_at, hold_seconds, created_at, updated_at)
+                 VALUES (?, ?, ?, ?::tstzrange, ?, ?, ?, now() + (?::integer * interval \'1 second\'), ?, now(), now())
+                 RETURNING *',
                     [
                         $resourceId,
                         $externalType,
@@ -40,6 +43,9 @@ class CreateBooking
                         $during,
                         json_encode((object) $metadata),
                         $idempotencyKey,
+                        $holdSeconds === null ? 'confirmed' : 'held',
+                        $holdSeconds,
+                        $holdSeconds,
                     ]
                 );
             });

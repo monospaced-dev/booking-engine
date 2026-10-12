@@ -15,12 +15,16 @@ class RescheduleBooking
     {
         try {
             // A savepoint also protects callers inside an enclosing transaction.
-            $row = DB::transaction(fn () => DB::selectOne(
-                'UPDATE bookings SET during = ?::tstzrange, updated_at = clock_timestamp(), lock_version = lock_version + 1
+            $row = DB::transaction(function () use ($resourceId, $bookingId, $version, $startsAt, $endsAt) {
+                ExpireBookingHolds::handle($resourceId);
+
+                return DB::selectOne(
+                    'UPDATE bookings SET during = ?::tstzrange, updated_at = clock_timestamp(), lock_version = lock_version + 1
                  WHERE id = ? AND resource_id = ? AND lock_version = ?
                  RETURNING *',
-                [BookingRange::literal($startsAt, $endsAt), $bookingId, $resourceId, $version],
-            ));
+                    [BookingRange::literal($startsAt, $endsAt), $bookingId, $resourceId, $version],
+                );
+            });
         } catch (QueryException $e) {
             if ($e->getCode() === '23P01') {
                 throw new BookingConflictException('Requested time overlaps an existing booking for this resource.');
