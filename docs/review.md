@@ -195,6 +195,7 @@ Legend: **Fits oracle?** = stays a pure busy-time store/merge, with no availabil
 - **Verdict:** low value unless a real requirement exists. Prefer consumer-side padding.
 
 ### F6. Batch busy endpoint
+**Status:** Implemented in Phase 9 on `feat/phase-9-batch-busy`: authenticated POST `/api/busy`, 1–100 integer IDs (deduplicated in request order), explicit-offset bounds and a 366-day window cap. Returns `{busy: {"<id>": [ranges]}}`, including empty lists. Unknown IDs return all-or-nothing 422 `validation_failed` with missing IDs in `errors.resource_ids`. Two busy-data overlap queries (bookings and blackouts), grouped in PHP through the merge logic shared with GET. No schema changes or availability fields. The first client is the salon app's "Any stylist" option. See `docs/consumer-contract-changes.md`. The original proposal follows.
 - **Fits:** yes, perfectly.
 - **Endpoint:** `POST /busy` with `{resource_ids:[…], from, to}`, returning `{ "<id>": [ranges] }`. Use POST to avoid URL length limits.
 - **Schema:** none. Two queries total (`resource_id IN (…)` for bookings and for blackouts), grouped in PHP; the per-resource timezone logic stays as it is.

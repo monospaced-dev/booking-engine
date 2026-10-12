@@ -33,6 +33,7 @@ Route::middleware(['auth.apikey', 'throttle:api'])->group(function () {
     Route::patch('/resources/{resource}/bookings/{booking}', [BookingController::class, 'update']);
     Route::delete('/resources/{resource}/bookings/{booking}', [BookingController::class, 'destroy']);
 
+    Route::post('/busy', [BusyRangesController::class, 'batch']);
     Route::post('/resources', [ResourceController::class, 'store']);
     Route::get('/resources/{resource}/busy', [BusyRangesController::class, 'index']);
 

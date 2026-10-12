@@ -270,3 +270,56 @@ specified, alongside deterministic list ordering. The full PostgreSQL 17 suite
 passes with both the default test array cache and production-default database cache, using `--fail-on-risky`: **291 tests, 1,263 assertions**. The production FPM
 image builds successfully with APCu; separate FastCGI requests verify counters and
 histograms persist across requests and bearer-protected scrapes are excluded.
+
+
+## Phase 9: batch busy endpoint
+
+Implemented on `feat/phase-9-batch-busy`; additive, with no migrations.
+
+| Endpoint | Before | After |
+|---|---|---|
+| POST `/api/busy` | No endpoint | Fetch merged busy ranges for 1–100 resource IDs in one request. |
+| GET `/api/resources/{resource}/busy` | Single-resource busy ranges | Behavior unchanged; shares merge and formatting code with the batch endpoint. |
+
+Send `X-API-Key` and JSON:
+
+```json
+{"resource_ids": [42, 7, 42], "from": "2026-07-21T09:00:00-05:00", "to": "2026-07-21T18:00:00-05:00"}
+```
+
+The 200 response is an object wrapped in `busy`, with a string key per distinct
+requested ID, in first-requested order. Resources without busy time have `[]`.
+Each list exactly matches that resource's GET busy result for the same bounds:
+bookings and blackouts are clipped to the window, sorted, and overlapping or
+touching ranges merge. Timestamps use UTC seconds with `+00:00`.
+
+```json
+{"busy": {"42": [{"starts_at": "2026-07-21T14:00:00+00:00", "ends_at": "2026-07-21T15:00:00+00:00"}], "7": []}}
+```
+
+The input must be a list of 1–100 JSON integers; the limit applies before
+deduplication. Numeric strings and floats are rejected. Both datetime bounds are
+required with explicit offsets; `to` must follow `from`, with at most 366 elapsed
+days (31,622,400 seconds). Invalid input returns 422 `validation_failed`. Any
+unknown ID rejects the whole request, naming all missing IDs in
+`errors.resource_ids`; no partial busy data is returned. Missing/invalid API keys
+return 401 `unauthorized`. The batch consumes one request from the existing
+per-key budget, regardless of ID count; excess returns 429 `too_many_requests`
+with `Retry-After`.
+
+The salon client can replace its per-stylist GET loop for "Any stylist" with this
+request. The client owns availability and stylist selection. The engine returns
+busy time only, with no free or available fields. No salon application changes
+are included in this phase.
+
+Busy-data loading uses exactly two queries: one bookings and one blackouts
+`resource_id IN (...)` query using the existing overlap scope. Resource-existence
+validation and authentication/throttling queries are separate. PHP groups and
+merges each resource with the existing Interval logic.
+
+Validation: full suite **329 tests passed, 1,422 assertions** on PostgreSQL
+**17.11** with `--fail-on-risky`; Pint and `git diff --check` pass. Regression
+coverage proves batch/single parity across three populated resources, ordered
+deduplication and empty lists, validation failures, and exactly two busy-data
+queries for 50 resources. OpenAPI request and real-response coverage includes
+success, 401, 422 and 429, and rejects extra availability fields.
