@@ -90,7 +90,7 @@ it('validates 401 on every protected operation', function (string $method, strin
     $uri = '/api'.strtr($operation, ['{resource}' => $resource->id, '{booking}' => $booking->id, '{blackout}' => $blackout->id]);
     $this->json($method, $uri)->assertUnauthorized()->assertOpenApi($operation, $method);
 })->with([
-    ['post', '/resources'],
+    ['post', '/busy'], ['post', '/resources'],
     ['get', '/resources/{resource}/bookings'], ['post', '/resources/{resource}/bookings'],
     ['get', '/resources/{resource}/bookings/{booking}'], ['patch', '/resources/{resource}/bookings/{booking}'],
     ['delete', '/resources/{resource}/bookings/{booking}'], ['get', '/resources/{resource}/busy'],
@@ -118,7 +118,7 @@ it('validates 422 on every operation accepting validated inputs', function (stri
     }
     $this->json($method, $uri)->assertUnprocessable()->assertOpenApi($operation, $method);
 })->with([
-    ['post', '/resources'], ['get', '/resources/{resource}/bookings'],
+    ['post', '/busy'], ['post', '/resources'], ['get', '/resources/{resource}/bookings'],
     ['post', '/resources/{resource}/bookings'], ['get', '/resources/{resource}/busy'],
     ['post', '/resources/{resource}/blackouts'], ['get', '/resources/{resource}/blackouts'],
 ]);
@@ -205,3 +205,40 @@ it('validates integer path IDs with their documented bounds', function (string $
         expect(fn () => $validator->validate($request))->toThrow(ValidationFailed::class);
     }
 })->with([['1', true], ['999999999999999999', true], ['0', false], ['1000000000000000000', false], ['-1', false], ['abc', false]]);
+
+it('validates the batch busy request schema', function (array $overrides, bool $valid) {
+    $validator = (new ValidatorBuilder)->fromYamlFile(base_path('docs/openapi.yaml'))->getRequestValidator();
+    $request = new Request('POST', '/api/busy', ['Content-Type' => 'application/json', 'X-API-Key' => 'spec-key'], json_encode(array_replace([
+        'resource_ids' => [3, 1, 3], 'from' => '2026-07-21T00:00:00Z', 'to' => '2026-07-22T00:00:00Z',
+    ], $overrides)));
+    if ($valid) {
+        expect($validator->validate($request)->path())->toBe('/busy');
+    } else {
+        expect(fn () => $validator->validate($request))->toThrow(ValidationFailed::class);
+    }
+})->with([
+    'duplicates allowed' => [[], true],
+    '100 ids' => [['resource_ids' => range(1, 100)], true],
+    'empty ids' => [['resource_ids' => []], false],
+    '101 ids' => [['resource_ids' => range(1, 101)], false],
+    'noninteger' => [['resource_ids' => ['stylist']], false],
+    'missing from' => [['from' => null], false],
+    'naive to' => [['to' => '2026-07-22T00:00:00'], false],
+]);
+
+it('rejects batch response contract regressions', function (string $mutation) {
+    $id = Resource::factory()->create()->id;
+    Blackout::factory()->create(['resource_id' => $id, 'during' => '[2026-07-21T10:00:00Z,2026-07-21T11:00:00Z)']);
+    $response = $this->withHeaders(apiKeyHeader())->postJson('/api/busy', [
+        'resource_ids' => [$id], 'from' => '2026-07-21T00:00:00Z', 'to' => '2026-07-22T00:00:00Z',
+    ])->assertOk()->assertOpenApi('/busy', 'post');
+    $payload = $response->json();
+    match ($mutation) {
+        'availability field' => $payload['available'] = true,
+        'range extra field' => $payload['busy'][$id][0]['free'] = false,
+        'legacy timestamp' => $payload['busy'][$id][0]['starts_at'] = '2026-07-21T10:00:00.000000Z',
+        'missing wrapper' => $payload = $payload['busy'],
+    };
+    $response->baseResponse->setContent(json_encode($payload));
+    expect(fn () => OpenApi::assertResponse($response, '/busy', 'post'))->toThrow(ValidationFailed::class);
+})->with(['availability field', 'range extra field', 'legacy timestamp', 'missing wrapper']);
