@@ -323,3 +323,35 @@ coverage proves batch/single parity across three populated resources, ordered
 deduplication and empty lists, validation failures, and exactly two busy-data
 queries for 50 resources. OpenAPI request and real-response coverage includes
 success, 401, 422 and 429, and rejects extra availability fields.
+
+
+## Phase 10: slot holds (F1)
+
+The salon checkout can hold a selected slot, then confirm after collecting details.
+All endpoints below are relative to `/api`. Existing clients that omit hold_seconds
+continue creating confirmed bookings. Consumers must accept two new booking fields.
+
+| Surface | Contract change | Consumer action / errors |
+| --- | --- | --- |
+| POST `/resources/{resource}/bookings` | Optional integer `hold_seconds`, 60–900 inclusive; database `now() + duration` sets held expiry. Omitted creates confirmed with null expiry. | Invalid duration: 422 `validation_failed`. Holds block overlaps with 409 `booking_conflict`. |
+| Booking objects | Required `status` (`held` or `confirmed`) and UTC `expires_at` (null when confirmed). | Preserve the ID and ETag; expiry display is informational, the database decides validity. |
+| `Idempotency-Key` | Original `hold_seconds` participates in payload comparison even after confirmation. Matching live replay returns 200 without renewing expiry; changed duration or omission returns 422 `idempotency_mismatch`. | Retry the identical payload. A cleaned expired hold releases its key; a retry may create a fresh booking. |
+| POST `/resources/{resource}/bookings/{booking}/confirm` | Live hold: 200, full confirmed object, new ETag/version. Already confirmed: 200, unchanged. | Expired (including cleaned): 410 `hold_expired`; wrong parent/missing: 404 `not_found`. Choose a slot again after 410. |
+| Confirm `If-Match` | Optional, same single strong quoted version rules as DELETE. | Invalid/stale: 412 `precondition_failed`; refreshed ETag required when supplied on a second confirm. Omit for an unconditional idempotent retry. |
+| GET `/resources/{resource}/busy`, POST `/busy`, GET booking list | Expired holds are absent, even before cleanup. Live holds are busy/listed. | Existing response containers are unchanged. Single-booking GET still returns a stored expired row. |
+| PATCH booking | Resource-scoped expiry cleanup runs in the same transaction; live holds retain status and original expiry. | Existing required If-Match and errors are unchanged. An expired target removed by cleanup returns 404. |
+| DELETE booking | Releases held and confirmed bookings alike. | Existing optional If-Match behavior is unchanged. Explicitly deleted live holds subsequently confirm as 404. |
+
+Expiry uses PostgreSQL `now()` exclusively (the transaction clock), never PHP's clock.
+Every INSERT and PATCH first removes expired holds for that resource in the same
+transaction. Cleanup rolls back if the write fails. The exclusion constraint still
+covers all stored booking rows, held and confirmed alike. No scheduler is needed.
+
+One additive migration adds status (not null, default confirmed), nullable timestamptz
+expiry, the state/expiry CHECK, and a private original duration column. Minimal
+`expired_booking_holds` receipts retain only booking/resource IDs so cleaned holds
+can return 410 while unknown IDs return 404; receipts persist until their resource
+is deleted. Existing rows default to confirmed. Deploy the migration before code.
+Down removes the new fields and receipts; surviving held rows become ordinary
+bookings for old code. There is no hold extension endpoint, webhook, or salon app
+change in this phase.

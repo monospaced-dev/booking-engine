@@ -4,6 +4,7 @@ info:
   version: 1.0.0
   description: |
     Busy-time storage and merging, not an availability or booking-policy engine.
+    Busy endpoints and booking lists exclude expired holds using database now().
     All response timestamps use UTC seconds precision: YYYY-MM-DDTHH:mm:ss+00:00.
     Intervals are half-open [start, end). Datetime inputs require an explicit
     offset (Z or +/-HH:mm). Blackouts are stored as instant ranges with the same explicit-offset inputs.
@@ -92,6 +93,7 @@ paths:
       description: |
         Ordered by range start ascending, then id ascending; no pagination. With both from and to, returns
         bookings overlapping the half-open window; ranges are not clipped.
+        Expired holds are excluded using the database clock.
         The two bounds must be supplied together, with to later than from.
       parameters:
         - name: from
@@ -128,6 +130,10 @@ paths:
         Concurrent retries recover both exclusion and unique constraint races by
         re-selecting the resource-scoped key and applying the same comparison.
         An exclusion failure without a stored row for this key remains 409 booking_conflict.
+        Optional hold_seconds (integer 60–900) creates a held booking with database-clock expiry.
+        Omission creates a confirmed booking. Replay also compares the original hold_seconds,
+        including after confirmation; it never renews expiry. Expired holds are removed
+        transactionally before insertion; a key from a removed hold may create a new booking.
         Supplied keys must contain 1–128 ASCII letters, digits, underscores or hyphens.
         Invalid keys return 422 with validation_failed.
       parameters:
@@ -145,6 +151,7 @@ paths:
               properties:
                 starts_at: {$ref: '#/components/schemas/DatetimeInput'}
                 ends_at: {$ref: '#/components/schemas/DatetimeInput'}
+                hold_seconds: {type: integer, minimum: 60, maximum: 900}
                 metadata:
                   description: Empty [] is also accepted as omitted metadata.
                   anyOf:
@@ -205,6 +212,62 @@ paths:
                       message: {type: string}
                       code: {type: string, enum: [idempotency_mismatch]}
         default: {$ref: '#/components/responses/Error'}
+  /resources/{resource}/bookings/{booking}/confirm:
+    parameters:
+      - {$ref: '#/components/parameters/ResourceId'}
+      - name: booking
+        in: path
+        required: true
+        schema: {type: integer, minimum: 1, maximum: 999999999999999999}
+    post:
+      operationId: confirmBookingHold
+      summary: Confirm a live slot hold
+      description: |
+        Atomically confirms only a held booking whose expires_at > database now(),
+        clears expires_at and increments lock_version. Already confirmed returns the
+        unchanged booking. Expired holds, including those removed by writer cleanup,
+        return 410 hold_expired. Wrong parent or missing ID returns 404 not_found.
+        Optional If-Match follows DELETE rules; stale or invalid tags return 412.
+        No hold extension is supported. Expiry uses the transaction's database clock.
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          schema: {type: string, pattern: '^"[1-9][0-9]{0,9}"$', example: '"1"'}
+      responses:
+        '200':
+          description: Full confirmed booking, unchanged on an already-confirmed retry
+          headers:
+            ETag: {$ref: '#/components/headers/BookingETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Booking'}
+        '410':
+          description: Hold expired, including after transactional cleanup deleted it
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [message, code]
+                properties:
+                  message: {type: string}
+                  code: {type: string, enum: [hold_expired]}
+        '412':
+          description: If-Match does not match the current booking version
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [message, code]
+                properties:
+                  message: {type: string}
+                  code: {type: string, enum: [precondition_failed]}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        default: {$ref: '#/components/responses/Error'}
   /resources/{resource}/bookings/{booking}:
     parameters:
       - {$ref: '#/components/parameters/ResourceId'}
@@ -232,6 +295,7 @@ paths:
       operationId: rescheduleBooking
       summary: Atomically reschedule a booking
       description: |
+        Removes this resource's expired holds before updating. A live hold retains its status and expiry.
         Changes only starts_at and ends_at, at stored UTC-second precision.
         Bookings may not exceed 366 elapsed days (422 validation_failed); this is a sanity limit, not a business rule.
         Requires one strong quoted lock_version via If-Match. Weak tags, wildcards,
@@ -628,7 +692,7 @@ components:
     Booking:
       type: object
       additionalProperties: false
-      required: [id, resource_id, external_type, external_id, metadata, idempotency_key, starts_at, ends_at, created_at, updated_at, lock_version]
+      required: [id, resource_id, external_type, external_id, metadata, idempotency_key, starts_at, ends_at, created_at, updated_at, lock_version, status, expires_at]
       properties:
         id: {type: integer}
         resource_id: {type: integer}
@@ -636,6 +700,13 @@ components:
         external_id: {type: integer}
         metadata:
           $ref: '#/components/schemas/Metadata'
+        status: {type: string, enum: [held, confirmed]}
+        expires_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: Database-clock expiry for held bookings; null when confirmed.
+          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$'
         lock_version: {type: integer, minimum: 1}
         idempotency_key: {type: string, nullable: true}
         starts_at: {$ref: '#/components/schemas/UtcTimestamp'}

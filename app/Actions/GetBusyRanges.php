@@ -14,7 +14,7 @@ class GetBusyRanges
     /** Get merged busy times from bookings and blackouts, clipped to the window. */
     public function handle(Resource $resource, Carbon $from, Carbon $to): array
     {
-        $ranges = $resource->bookings()->overlapping($from, $to)->get()
+        $ranges = $resource->bookings()->active()->overlapping($from, $to)->get()
             ->concat($resource->blackouts()->overlapping($from, $to)->get());
 
         return $this->merge($ranges, $from, $to);
@@ -23,7 +23,7 @@ class GetBusyRanges
     /** Fetch both busy sources once, then merge each requested resource in memory. */
     public function handleBatch(array $resourceIds, Carbon $from, Carbon $to): array
     {
-        $ranges = Booking::whereIn('resource_id', $resourceIds)->overlapping($from, $to)->get()
+        $ranges = Booking::whereIn('resource_id', $resourceIds)->active()->overlapping($from, $to)->get()
             ->concat(Blackout::whereIn('resource_id', $resourceIds)->overlapping($from, $to)->get())
             ->groupBy('resource_id');
 

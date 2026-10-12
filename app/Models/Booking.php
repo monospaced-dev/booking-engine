@@ -13,9 +13,9 @@ class Booking extends Model
 
     protected $fillable = ['resource_id', 'external_type', 'external_id', 'metadata', 'id', 'starts_at', 'ends_at', 'idempotency_key'];
 
-    protected $casts = ['lock_version' => 'integer', 'metadata' => 'array', 'starts_at' => 'datetime', 'ends_at' => 'datetime'];
+    protected $casts = ['lock_version' => 'integer', 'expires_at' => 'datetime', 'hold_seconds' => 'integer', 'metadata' => 'array', 'starts_at' => 'datetime', 'ends_at' => 'datetime'];
 
-    protected $hidden = ['during'];
+    protected $hidden = ['during', 'hold_seconds'];
 
     public function attributesToArray(): array
     {
@@ -23,6 +23,11 @@ class Booking extends Model
         $attributes['metadata'] = (object) ($this->metadata ?? []);
 
         return $attributes;
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->whereRaw("(status = 'confirmed' OR expires_at > now())");
     }
 
     public function resource(): BelongsTo
