@@ -226,7 +226,10 @@ paths:
         Atomically confirms only a held booking whose expires_at > database now(),
         clears expires_at and increments lock_version. Already confirmed returns the
         unchanged booking. Expired holds, including those removed by writer cleanup,
-        return 410 hold_expired. Wrong parent or missing ID returns 404 not_found.
+        return 410 hold_expired. Receipts older than 24 hours are pruned on that
+        resource's next INSERT/PATCH cleanup. A confirm more than 24 hours after
+        expiry may return 404 not_found instead of 410 hold_expired.
+        Wrong parent or missing ID returns 404 not_found.
         Optional If-Match follows DELETE rules; stale or invalid tags return 412.
         No hold extension is supported. Expiry uses the transaction's database clock.
       parameters:

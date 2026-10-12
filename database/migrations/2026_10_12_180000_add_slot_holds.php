@@ -19,7 +19,9 @@ return new class extends Migration
         // a missing booking without retaining customer data or blocking ranges.
         DB::statement('CREATE TABLE expired_booking_holds (
             booking_id bigint PRIMARY KEY,
-            resource_id bigint NOT NULL REFERENCES resources(id) ON DELETE CASCADE)');
+            resource_id bigint NOT NULL REFERENCES resources(id) ON DELETE CASCADE,
+            created_at timestamptz NOT NULL DEFAULT now())');
+        DB::statement('CREATE INDEX expired_booking_holds_resource_created_at_index ON expired_booking_holds (resource_id, created_at)');
     }
 
     public function down(): void

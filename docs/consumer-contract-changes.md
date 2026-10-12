@@ -349,9 +349,13 @@ covers all stored booking rows, held and confirmed alike. No scheduler is needed
 
 One additive migration adds status (not null, default confirmed), nullable timestamptz
 expiry, the state/expiry CHECK, and a private original duration column. Minimal
-`expired_booking_holds` receipts retain only booking/resource IDs so cleaned holds
-can return 410 while unknown IDs return 404; receipts persist until their resource
-is deleted. Existing rows default to confirmed. Deploy the migration before code.
+`expired_booking_holds` receipts retain booking/resource IDs and creation time so cleaned holds
+can return 410 while unknown IDs return 404. Each receipt has a database-default
+`created_at`; INSERT/PATCH cleanup also prunes that resource's receipts older than
+24 hours. A confirm more than 24 hours after expiry may return 404 `not_found`
+instead of 410 `hold_expired`. Retention runs from receipt creation during cleanup,
+so 410 can persist longer when cleanup is delayed. Resource deletion removes its
+remaining receipts. Existing rows default to confirmed. Deploy the migration before code.
 Down removes the new fields and receipts; surviving held rows become ordinary
 bookings for old code. There is no hold extension endpoint, webhook, or salon app
 change in this phase.

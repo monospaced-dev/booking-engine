@@ -140,3 +140,31 @@ it('returns not found for a live hold under the wrong parent or after explicit r
     $this->deleteJson($this->path.'/'.$hold->json('id'))->assertNoContent();
     $this->postJson($this->path.'/'.$hold->json('id').'/confirm')->assertNotFound()->assertJsonPath('code', 'not_found');
 });
+
+it('prunes only resource receipts older than 24 hours on the next cleanup', function (string $method) {
+    $hold = $this->postJson($this->path, $this->payload + ['hold_seconds' => 60])->assertCreated();
+    DB::update('UPDATE bookings SET expires_at = now() WHERE id = ?', [$hold->json('id')]);
+    $current = $this->postJson($this->path, $this->payload)->assertCreated();
+    $expiredUri = $this->path.'/'.$hold->json('id').'/confirm';
+    $this->postJson($expiredUri)->assertGone();
+    expect(DB::selectOne('SELECT created_at = now() AS database_timed FROM expired_booking_holds WHERE booking_id = ?', [$hold->json('id')])->database_timed)->toBeTrue();
+
+    DB::update("UPDATE expired_booking_holds SET created_at = now() - interval '24 hours' - interval '1 second' WHERE booking_id = ?", [$hold->json('id')]);
+    $other = Resource::factory()->create();
+    DB::insert("INSERT INTO expired_booking_holds (booking_id, resource_id, created_at) VALUES
+        (?, ?, now() - interval '1 hour'), (?, ?, now() - interval '24 hours'), (?, ?, now() - interval '25 hours')",
+        [900001, $this->resource->id, 900002, $this->resource->id, 900003, $other->id]);
+    $target = ['starts_at' => '2026-11-01T11:00:00Z', 'ends_at' => '2026-11-01T12:00:00Z'];
+    if ($method === 'post') {
+        $this->postJson($this->path, $target)->assertCreated();
+    } else {
+        $this->patchJson($this->path.'/'.$current->json('id'), $target, ['If-Match' => '"1"'])->assertOk();
+    }
+    $this->assertDatabaseMissing('expired_booking_holds', ['booking_id' => $hold->json('id')]);
+    foreach ([900001, 900002, 900003] as $id) {
+        $this->assertDatabaseHas('expired_booking_holds', ['booking_id' => $id]);
+    }
+    $this->postJson($expiredUri)->assertNotFound()->assertJsonPath('code', 'not_found')
+        ->assertOpenApi('/resources/{resource}/bookings/{booking}/confirm', 'post');
+    $this->postJson($this->path.'/900001/confirm')->assertGone()->assertJsonPath('code', 'hold_expired');
+})->with(['post', 'patch']);
