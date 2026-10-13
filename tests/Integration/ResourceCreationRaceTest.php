@@ -2,6 +2,7 @@
 
 use App\Models\ApiKey;
 use App\Models\Resource;
+use App\Models\Tenant;
 use Illuminate\Database\Connection;
 use Illuminate\Database\PostgresConnection;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
@@ -13,6 +14,7 @@ uses(DatabaseMigrations::class);
 it('recovers resource creation races by identity alone', function () {
     $headers = apiKeyHeader();
     $identity = ['external_type' => 'race', 'external_id' => 123];
+    $tenantId = Tenant::where('name', 'default')->value('id');
     $originalResolver = Connection::getResolver('pgsql');
     Connection::resolverFor('pgsql', fn ($pdo, $database, $prefix, $config) => new RaceConnection($pdo, $database, $prefix, $config));
     DB::purge();
@@ -25,14 +27,14 @@ it('recovers resource creation races by identity alone', function () {
     stream_set_timeout($pipes[1], 15);
     stream_set_timeout($pipes[2], 15);
     $started = false;
-    $connection->beforeExecuting(function (string $query) use (&$started, $pipes, $connection, $requestPid) {
+    $connection->beforeExecuting(function (string $query) use (&$started, $pipes, $connection, $requestPid, $tenantId) {
         if ($started || ! str_starts_with($query, 'insert into "resources"')) {
             return;
         }
         $started = true;
         fwrite($pipes[0], json_encode([
             'mode' => 'resource', 'connection' => $connection->getConfig(), 'request_pid' => $requestPid,
-            'bindings' => ['race', 123],
+            'bindings' => ['race', 123, $tenantId],
         ], JSON_THROW_ON_ERROR)."\n");
         fclose($pipes[0]);
         expect(trim(fgets($pipes[1])))->toMatch('/^[0-9]+$/');

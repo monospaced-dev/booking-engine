@@ -15,7 +15,7 @@ class ResourceController extends Controller
         ]);
 
         // firstOrCreate re-selects the winning identity after a concurrent unique violation.
-        $resource = Resource::firstOrCreate($validated);
+        $resource = Resource::firstOrCreate(['tenant_id' => $request->attributes->get('tenant_id')] + $validated);
 
         return response()->json([
             'id' => $resource->id,

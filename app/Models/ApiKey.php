@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class ApiKey extends Model
 {
     protected $fillable = [
+        'tenant_id',
         'key',
         'name',
         'last_used_at',

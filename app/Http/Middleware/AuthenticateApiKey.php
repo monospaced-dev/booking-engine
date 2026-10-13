@@ -33,6 +33,7 @@ class AuthenticateApiKey
         }
 
         $request->attributes->set('api_key_id', $storedKey->id);
+        $request->attributes->set('tenant_id', (int) $storedKey->tenant_id);
 
         $now = now();
         ApiKey::whereKey($storedKey->id)

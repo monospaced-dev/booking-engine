@@ -60,10 +60,43 @@ curl -s -X POST http://localhost:8080/api/resources/1/bookings \
   -d '{"starts_at":"2026-10-01T14:00:00-05:00","ends_at":"2026-10-01T16:00:00-05:00"}'
 ```
 
+### Tenants
+
+Each API key belongs to one tenant and can only access that tenant's resources,
+bookings, blackouts, busy ranges and holds. Foreign IDs return 404 `not_found`,
+just like missing IDs; batch busy returns 422 `validation_failed` and names foreign
+IDs as unknown in `errors.resource_ids`. Resource external pairs are unique per
+tenant, so two businesses can each register `stylist` / `1`. Response shapes and
+request headers stay the same; the key chooses the tenant, never client input.
+Idempotency keys remain resource-scoped, and holds on separate tenants' resources
+can overlap independently.
+
+The Phase 11 migration creates `default` and assigns all existing keys (including
+inactive keys) and resources to it. Current clients retain their keys and IDs.
+New keys require an existing tenant name:
+
+```sh
+php artisan tenant:create salon-two
+php artisan apikey:generate --name=salon-two-service --tenant=salon-two
+php artisan apikey:deactivate --name=salon-two-service
+php artisan apikey:reactivate --name=salon-two-service
+```
+
+Tenant names are unique. `tenant:create` rejects an existing name; key generation
+fails without `--tenant` or for an unknown tenant. Key lifecycle commands continue
+selecting by key name, so use distinct key names across tenants.
+
+Deploy with API writes paused: migrate and deploy the tenant-aware code together,
+then resume traffic. Older writers omit the newly required tenant columns.
+Rollback fails atomically if tenants have created duplicate external pairs;
+resolve those identities before rolling back. There are no cross-tenant admin
+endpoints or PostgreSQL row-level security. Rate limits and metrics retain their
+existing behavior.
+
 ### API keys
 
 ```bash
-php artisan apikey:generate --name=inspector-service    # prints the key once
+php artisan apikey:generate --name=inspector-service --tenant=default    # prints the key once
 php artisan apikey:deactivate --name=inspector-service
 php artisan apikey:reactivate --name=inspector-service
 ```
@@ -75,7 +108,7 @@ With Docker (Postgres, php-fpm and nginx, same images as production):
 ```bash
 docker compose up --build
 docker compose exec fpm php artisan migrate
-docker compose exec fpm php artisan apikey:generate --name=local
+docker compose exec fpm php artisan apikey:generate --name=local --tenant=default
 curl http://localhost:8080/api/health
 ```
 

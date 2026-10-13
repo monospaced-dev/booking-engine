@@ -57,7 +57,7 @@ try {
         }
         fwrite(STDOUT, $response->getStatusCode()."\n");
     } elseif (($input['mode'] ?? '') === 'resource') {
-        $statement = $pdo->prepare('INSERT INTO resources (external_type, external_id, created_at, updated_at) VALUES (?, ?, now(), now()) RETURNING id');
+        $statement = $pdo->prepare('INSERT INTO resources (external_type, external_id, tenant_id, created_at, updated_at) VALUES (?, ?, ?, now(), now()) RETURNING id');
         $statement->execute($input['bindings']);
         fwrite(STDOUT, $statement->fetchColumn()."\n");
     } else {

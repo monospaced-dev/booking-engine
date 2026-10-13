@@ -102,7 +102,7 @@ it('uses exactly two overlap data queries for fifty resources and one throttle r
     expect($busyQueries)->toHaveCount(2);
     foreach (['bookings', 'blackouts'] as $index => $table) {
         expect($busyQueries[$index]['query'])->toContain('from "'.$table.'"', '"resource_id" in (', 'during && ?::tstzrange')
-            ->and($busyQueries[$index]['bindings'])->toHaveCount(51);
+            ->and($busyQueries[$index]['bindings'])->toHaveCount(52);
     }
     $this->postJson('/api/busy', ['resource_ids' => $ids] + batchWindow())->assertStatus(429)->assertJsonPath('code', 'too_many_requests')->assertOpenApi('/busy', 'post');
 });

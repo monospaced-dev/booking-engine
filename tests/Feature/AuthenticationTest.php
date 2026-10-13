@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\ApiKey;
 use App\Models\Resource;
+use App\Models\Tenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -31,9 +33,10 @@ it('returns 401 when an invalid API key is provided', function () {
 it('returns 401 when the API key is marked inactive', function () {
     $plainKey = 'inactive-key-test';
 
-    \App\Models\ApiKey::create([
+    ApiKey::create([
+        'tenant_id' => Tenant::where('name', 'default')->value('id'),
         'name' => 'inactive-key',
-        'key' => \App\Models\ApiKey::hashKey($plainKey),
+        'key' => ApiKey::hashKey($plainKey),
         'is_active' => false,
     ]);
 

@@ -7,6 +7,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Route;
 use Symfony\Component\HttpFoundation\Response;
@@ -22,7 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->prepend(StartRequestTimer::class);
-        $middleware->prependToPriorityList(ThrottleRequests::class, AuthenticateApiKey::class);
+        $middleware->prependToPriorityList([ThrottleRequests::class, SubstituteBindings::class], AuthenticateApiKey::class);
         $middleware->alias([
             'auth.apikey' => AuthenticateApiKey::class,
         ]);
