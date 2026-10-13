@@ -18,7 +18,7 @@ it('backfills local blackout dates into exact instants including both Chicago DS
         ['America/Chicago', '2026-11-01', null, null, '2026-11-01T05:00:00+00:00', '2026-11-02T06:00:00+00:00'],
     ];
     foreach ($cases as $i => [$timezone, $date, $start, $end]) {
-        $resource = DB::table('resources')->insertGetId(['external_type' => 'migration', 'external_id' => $i, 'timezone' => $timezone]);
+        $resource = DB::table('resources')->insertGetId(['tenant_id' => DB::table('tenants')->where('name', 'default')->value('id'), 'external_type' => 'migration', 'external_id' => $i, 'timezone' => $timezone]);
         DB::table('blackout_dates')->insert(['resource_id' => $resource, 'date' => $date, 'start_time' => $start, 'end_time' => $end,
             'note' => 'legacy-'.$i, 'created_at' => '2026-01-01 01:02:03', 'updated_at' => '2026-01-02 01:02:03']);
     }

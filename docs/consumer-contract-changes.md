@@ -359,3 +359,42 @@ remaining receipts. Existing rows default to confirmed. Deploy the migration bef
 Down removes the new fields and receipts; surviving held rows become ordinary
 bookings for old code. There is no hold extension endpoint, webhook, or salon app
 change in this phase.
+
+
+## Phase 11: tenant isolation
+
+Each API key now belongs to a tenant. Authentication resolves that tenant once per
+request; the central `{resource}` binding returns only its resources, before input
+validation or writes. Existing child-to-resource ownership checks remain in place.
+Bookings, blackouts and hold receipts inherit tenant ownership through resources.
+
+| Surface | Contract change | Consumer action / errors |
+| --- | --- | --- |
+| Existing keys and IDs | One migration creates `default` and backfills every existing API key and resource, preserving IDs and key hashes. | Existing clients keep their keys and requests unchanged. |
+| All resource and child routes | The key can only access its tenant's data. Foreign resource IDs and children under the wrong resource are indistinguishable from missing IDs. | 404 `not_found`, never a tenant-related 403. Use IDs obtained with your tenant's key. |
+| POST `/resources` | External identity is unique on `(tenant_id, external_type, external_id)`. The same external pair in another tenant creates a separate resource (201). | Persist your tenant's returned ID; repeat within the same tenant returns 200. Client-supplied tenant fields cannot select another tenant. |
+| POST `/busy` | Foreign IDs are treated as missing. A mixed batch rejects the whole request and names only foreign/missing IDs in `errors.resource_ids`. | 422 `validation_failed`; no partial busy result. Send only your tenant's IDs. |
+| Idempotency and holds | Replay, overlap, confirmation, expiry and cleanup remain resource-scoped. Keys and slots do not collide across tenants' separate resources. | Existing `Idempotency-Key`, `If-Match`, ETag and hold contracts remain unchanged. |
+| CLI provisioning | `tenant:create {name}` creates a unique tenant. `apikey:generate --name=... --tenant=...` requires an existing tenant by name. | Update provisioning scripts to supply `--tenant=default` or the new business's name. Missing/unknown tenant fails; deactivate/reactivate continue using `--name`. |
+| JSON and headers | Response shapes and authentication header remain unchanged; no tenant selector is added. | No response parser change required. |
+
+Resource and API-key tenant foreign keys are NOT NULL after backfill. Batch resource
+lookups and both booking/blackout `resource_id IN (...)` queries apply the tenant
+predicate. Busy-data loading still uses two overlap queries.
+
+Pause API writes for the migration/code deployment and resume with both applied;
+old writers cannot populate the required tenant columns. PostgreSQL executes the
+migration transactionally. Down restores global external-pair uniqueness before
+removing tenant columns, and fails atomically if cross-tenant duplicates exist.
+Resolve duplicate identities before attempting rollback.
+
+Per-tenant rate limits/metrics, cross-tenant admin endpoints and PostgreSQL
+row-level security are outside this phase.
+
+Validation: full suite **362 tests passed, 1,751 assertions** on disposable
+PostgreSQL **17.11** with `--fail-on-risky`, including real database race tests.
+The router-derived route sweep verifies foreign parent/child IDs return 404 and
+leave business data unchanged. Additional coverage proves separate external
+identities, batch query scoping, replay/hold isolation, legacy backfill, database
+constraints, central untyped bindings, provisioning lifecycle and atomic rollback
+refusal. Pint and `git diff --check` pass.

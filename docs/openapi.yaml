@@ -4,6 +4,14 @@ info:
   version: 1.0.0
   description: |
     Busy-time storage and merging, not an availability or booking-policy engine.
+    Each API key belongs to one tenant. Resource identities (external_type,
+    external_id) are unique within that tenant. All resource, booking, blackout,
+    busy and hold operations are tenant-scoped; foreign resource or child IDs
+    return 404 not_found, identical to missing IDs. Batch busy treats foreign IDs
+    as unknown and returns 422 validation_failed naming them in errors.resource_ids.
+    Existing keys and resources are backfilled into the default tenant.
+    No tenant field or header is accepted for choosing a tenant; response shapes
+    are unchanged. Idempotency keys remain scoped to a resource within its tenant.
     Busy endpoints and booking lists exclude expired holds using database now().
     All response timestamps use UTC seconds precision: YYYY-MM-DDTHH:mm:ss+00:00.
     Intervals are half-open [start, end). Datetime inputs require an explicit
@@ -56,7 +64,7 @@ paths:
       operationId: findOrCreateResource
       summary: Find or create an external resource
       description: |
-        Finds or creates by external_type and external_id only: 201 on creation,
+        Finds or creates by external_type and external_id within the key's tenant: 201 on creation,
         200 for an existing identity, including concurrent creation races.
         Resources have no timezone; unknown input fields are ignored.
       requestBody:
@@ -417,7 +425,7 @@ paths:
         first-requested order. Both bounds require explicit offsets; to must be
         later than from and the window may not exceed 366 elapsed days.
         All or nothing: any unknown ID returns 422 validation_failed, with
-        errors.resource_ids naming every missing ID and no busy data.
+        errors.resource_ids naming every missing or foreign-tenant ID and no busy data.
         Each resource's ranges equal GET /resources/{resource}/busy for the same
         window. Empty resources map to []. Only busy time is returned.
       requestBody:

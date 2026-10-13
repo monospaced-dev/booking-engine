@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ApiKey;
+use App\Models\Tenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\OpenApi;
@@ -52,11 +53,12 @@ function something()
     // ..
 }
 
-function apiKeyHeader(): array
+function apiKeyHeader(?int $tenantId = null): array
 {
     $plainKey = 'test-plain-key-'.uniqid();
 
     ApiKey::create([
+        'tenant_id' => $tenantId ?? Tenant::where('name', 'default')->value('id'),
         'name' => 'test-key',
         'key' => ApiKey::hashKey($plainKey),
         'is_active' => true,

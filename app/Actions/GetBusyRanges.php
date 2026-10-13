@@ -21,10 +21,11 @@ class GetBusyRanges
     }
 
     /** Fetch both busy sources once, then merge each requested resource in memory. */
-    public function handleBatch(array $resourceIds, Carbon $from, Carbon $to): array
+    public function handleBatch(array $resourceIds, Carbon $from, Carbon $to, int $tenantId): array
     {
-        $ranges = Booking::whereIn('resource_id', $resourceIds)->active()->overlapping($from, $to)->get()
-            ->concat(Blackout::whereIn('resource_id', $resourceIds)->overlapping($from, $to)->get())
+        $ownedIds = Resource::forTenant($tenantId)->whereIn('id', $resourceIds)->select('id');
+        $ranges = Booking::whereIn('resource_id', clone $ownedIds)->active()->overlapping($from, $to)->get()
+            ->concat(Blackout::whereIn('resource_id', clone $ownedIds)->overlapping($from, $to)->get())
             ->groupBy('resource_id');
 
         $busy = [];

@@ -46,7 +46,7 @@ class BusyRangesController extends Controller
         }
 
         $ids = array_values(array_unique($validated['resource_ids']));
-        $existing = Resource::whereIn('id', $ids)->pluck('id')->all();
+        $existing = Resource::forTenant($request->attributes->get('tenant_id'))->whereIn('id', $ids)->pluck('id')->all();
         $missing = array_values(array_diff($ids, $existing));
         if ($missing !== []) {
             throw ValidationException::withMessages([
@@ -55,7 +55,7 @@ class BusyRangesController extends Controller
         }
 
         $busy = [];
-        foreach ($getBusyRanges->handleBatch($ids, $from, $to) as $id => $windows) {
+        foreach ($getBusyRanges->handleBatch($ids, $from, $to, $request->attributes->get('tenant_id')) as $id => $windows) {
             $busy[$id] = $this->format($windows);
         }
 
